@@ -39,9 +39,17 @@ export type Contest = {
   open_time: string
   lock_time: string
   close_time: string
+  base_prize_pool: number
+  rollover_amount: number
+  sponsor_bonus: number
   final_prize_pool: number
   total_entries: number
+  total_winners: number
+  tokens_used_count: number
+  perfect_slates_count: number
   status: string
+  created_at: string
+  updated_at: string
 }
 
 export type UserPick = {
