@@ -161,7 +161,7 @@ export default function PerfectSlateGame() {
     setTimeRemaining(`${hours}h ${minutes}m`)
   }
 
-  const handlePickSelect = (gameId: number, pickType: string, selection: string, displayText: string, pickId: number) => {
+  const handlePickSelect = (gameId: number, pickType: 'spread' | 'total', selection: string, displayText: string, pickId: number) => {
     if (isSubmitted) return
     
     // Check if this is a token pick
