@@ -148,7 +148,7 @@ export default function PerfectSlateGame() {
     if (!currentContest) return
     
     const now = new Date()
-    const lockTime = new Date(currentContest.lock_time)
+    const lockTime = new Date(currentContest?.lock_time || '')
     const diff = lockTime.getTime() - now.getTime()
     
     if (diff <= 0) {
