@@ -302,7 +302,11 @@ export default function PerfectSlateGame() {
           
           {/* Token Button */}
           <button
-            onClick={() => handlePickSelect(game.id, 'token', 'token', 'TOKEN', -1)}
+            onClick={() => {
+  if (tokensUsed < 5 && !isSubmitted) {
+    setTokensUsed(prev => prev + 1)
+  }
+}}
             disabled={isSubmitted || tokensUsed >= 5}
             className={`
               px-3 py-1 text-xs font-bold border-2 pixel-button
