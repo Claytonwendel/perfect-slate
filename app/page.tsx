@@ -455,7 +455,7 @@ export default function PerfectSlateGame() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-blue-400 to-green-400 flex items-center justify-center">
+      <div className="min-h-screen bg-sky-400 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-bounce mb-4">
             <CircleDollarSign className="w-16 h-16 text-white" />
@@ -469,9 +469,15 @@ export default function PerfectSlateGame() {
   const totalPicks = selectedPicks.length + gamesWithTokens.size
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-400 via-blue-400 to-green-400 relative">
+    <div className="min-h-screen relative">
+      {/* Sky Blue Top Section */}
+      <div className="bg-sky-400 absolute top-0 left-0 right-0 h-[450px]"></div>
+      
+      {/* Green Field Bottom Section */}
+      <div className="bg-green-500 absolute top-[450px] left-0 right-0 bottom-0"></div>
+      
       {/* Navigation */}
-      <nav className="bg-blue-400 relative z-20">
+      <nav className="relative z-20">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex justify-between items-center">
             {/* Sport Selector */}
@@ -550,8 +556,8 @@ export default function PerfectSlateGame() {
         </div>
       </nav>
       
-      {/* Header Content - Still Blue Background */}
-      <div className="bg-blue-400 relative z-10 pb-20">
+      {/* Header Content - Sky Blue Background */}
+      <div className="relative z-10 pb-20">
         <div className="text-center pt-8">
           {/* Prize Pool */}
           <button
