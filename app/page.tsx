@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect } from 'react'
 import { 
-  Users, DollarSign, Trophy, Clock, ArrowDown, Ticket, X, Trash2,
-  ChevronDown, TrendingUp, Flame, Snowflake, Zap, AlertCircle,
-  CheckCircle, Home, BarChart3, User, FileText
+  Users, DollarSign, Trophy, Clock, Ticket, X, Trash2,
+  ChevronDown, Zap, AlertCircle, FileText, BarChart3, 
+  User, Coins, Star, Cloud
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -36,10 +36,22 @@ type Pick = {
 type Contest = {
   id: number
   sport: 'NFL' | 'NCAAF'
+  season_id?: number
   week_number: number
+  open_time: string
+  lock_time: string
+  close_time: string
+  base_prize_pool: number
+  rollover_amount: number
+  sponsor_bonus: number
   final_prize_pool: number
   total_entries: number
+  total_winners: number
+  tokens_used_count: number
+  perfect_slates_count: number
   status: string
+  created_at?: string
+  updated_at?: string
 }
 
 type UserPick = {
@@ -50,6 +62,33 @@ type UserPick = {
   displayText: string
 }
 
+// Extract city name from full team name
+const getCityName = (teamName: string): string => {
+  // Remove common team suffixes
+  const suffixes = [
+    'Chiefs', 'Lions', 'Packers', 'Bears', 'Vikings', 'Buccaneers', 
+    'Patriots', 'Bills', 'Jets', 'Dolphins', 'Ravens', 'Bengals', 
+    'Browns', 'Steelers', 'Texans', 'Colts', 'Jaguars', 'Titans',
+    'Broncos', 'Raiders', 'Chargers', 'Cowboys', 'Eagles', 'Giants',
+    'Commanders', 'Cardinals', '49ers', 'Seahawks', 'Rams', 'Saints',
+    'Falcons', 'Panthers', 'Rays', 'Orioles', 'Blue Jays', 'Yankees',
+    'Red Sox', 'Guardians', 'Tigers', 'Royals', 'Twins', 'White Sox',
+    'Astros', 'Athletics', 'Angels', 'Mariners', 'Rangers', 'Phillies',
+    'Mets', 'Nationals', 'Marlins', 'Braves', 'Brewers', 'Cubs', 'Reds',
+    'Pirates', 'Cardinals', 'Dodgers', 'Giants', 'Padres', 'Rockies',
+    'Diamondbacks'
+  ]
+  
+  let city = teamName
+  suffixes.forEach(suffix => {
+    if (city.endsWith(suffix)) {
+      city = city.replace(suffix, '').trim()
+    }
+  })
+  
+  return city
+}
+
 export default function PerfectSlateGame() {
   // State
   const [selectedSport, setSelectedSport] = useState<'NFL' | 'NCAAF'>('NFL')
@@ -58,15 +97,13 @@ export default function PerfectSlateGame() {
   const [picks, setPicks] = useState<Pick[]>([])
   const [currentContest, setCurrentContest] = useState<Contest | null>(null)
   const [selectedPicks, setSelectedPicks] = useState<UserPick[]>([])
-  const [tokensUsed, setTokensUsed] = useState(0)
+  const [gamesWithTokens, setGamesWithTokens] = useState<Set<number>>(new Set())
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitted, setIsSubmitted] = useState(false)
   const [showSlateModal, setShowSlateModal] = useState(false)
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [showPrizeHistory, setShowPrizeHistory] = useState(false)
-  const [shakeElement, setShakeElement] = useState<string | null>(null)
-  const [pickPercentages, setPickPercentages] = useState<Record<number, number>>({})
   const [timeRemaining, setTimeRemaining] = useState('')
   const [user, setUser] = useState<any>(null)
   const [tokenBalance, setTokenBalance] = useState(0)
@@ -89,7 +126,6 @@ export default function PerfectSlateGame() {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
       setUser(user)
-      // Fetch user's token balance
       const { data: userData } = await supabase
         .from('users')
         .select('token_balance')
@@ -105,7 +141,6 @@ export default function PerfectSlateGame() {
   const loadContestData = async () => {
     setIsLoading(true)
     
-    // Fetch current contest
     const { data: contestData } = await supabase
       .from('contests')
       .select('*')
@@ -118,7 +153,6 @@ export default function PerfectSlateGame() {
     if (contestData) {
       setCurrentContest(contestData)
       
-      // Fetch games for this contest
       const { data: gamesData } = await supabase
         .from('games')
         .select('*')
@@ -128,7 +162,6 @@ export default function PerfectSlateGame() {
       if (gamesData) {
         setGames(gamesData)
         
-        // Fetch all picks for these games
         const gameIds = gamesData.map(g => g.id)
         const { data: picksData } = await supabase
           .from('picks')
@@ -145,10 +178,10 @@ export default function PerfectSlateGame() {
   }
 
   const updateTimeRemaining = () => {
-    if (!currentContest) return
+    if (!currentContest || !currentContest.lock_time) return
     
     const now = new Date()
-    const lockTime = new Date((currentContest as any).lock_time)
+    const lockTime = new Date(currentContest.lock_time)
     const diff = lockTime.getTime() - now.getTime()
     
     if (diff <= 0) {
@@ -162,48 +195,49 @@ export default function PerfectSlateGame() {
   }
 
   const handlePickSelect = (gameId: number, pickType: 'spread' | 'total', selection: string, displayText: string, pickId: number) => {
-    if (isSubmitted) return
+    if (isSubmitted || gamesWithTokens.has(gameId)) return
     
-    // Check if this is a token pick
-    const pickKey = `${gameId}-${pickType}-${selection}`
-    if (pickKey.includes('token')) {
-      // Handle token usage
-      if (tokensUsed >= 5) {
-        setShakeElement(pickKey)
-        setTimeout(() => setShakeElement(null), 500)
-        return
-      }
-      setTokensUsed(prev => prev + 1)
-      return
-    }
-    
-    // Regular pick logic
     const existingPickIndex = selectedPicks.findIndex(
       p => p.gameId === gameId && p.pickType === pickType
     )
     
     if (existingPickIndex !== -1) {
-      // Replace existing pick
       const newPicks = [...selectedPicks]
       newPicks[existingPickIndex] = { gameId, pickId, pickType, selection, displayText }
       setSelectedPicks(newPicks)
     } else {
-      // Check if we can add this pick
       const picksForThisGame = selectedPicks.filter(p => p.gameId === gameId)
       
-      if (selectedPicks.length + tokensUsed >= 10) {
-        setShakeElement(pickKey)
-        setTimeout(() => setShakeElement(null), 500)
+      if (selectedPicks.length + gamesWithTokens.size >= 10) {
         return
       }
       
       if (picksForThisGame.length >= 2) {
-        setShakeElement(pickKey)
-        setTimeout(() => setShakeElement(null), 500)
         return
       }
       
       setSelectedPicks([...selectedPicks, { gameId, pickId, pickType, selection, displayText }])
+    }
+  }
+
+  const handleTokenToggle = (gameId: number) => {
+    if (isSubmitted) return
+    
+    const newTokenGames = new Set(gamesWithTokens)
+    
+    if (newTokenGames.has(gameId)) {
+      // Remove token
+      newTokenGames.delete(gameId)
+      setGamesWithTokens(newTokenGames)
+    } else {
+      // Add token
+      if (selectedPicks.length + newTokenGames.size >= 10) return
+      if (gamesWithTokens.size >= 5) return
+      
+      // Remove any picks from this game
+      setSelectedPicks(selectedPicks.filter(p => p.gameId !== gameId))
+      newTokenGames.add(gameId)
+      setGamesWithTokens(newTokenGames)
     }
   }
 
@@ -226,7 +260,7 @@ export default function PerfectSlateGame() {
           body: JSON.stringify({
             contestId: currentContest.id,
             picks: selectedPicks.map(p => p.pickId),
-            tokensUsed
+            tokensUsed: gamesWithTokens.size
           })
         }
       )
@@ -238,12 +272,7 @@ export default function PerfectSlateGame() {
         setShowConfirmModal(false)
         setShowSlateModal(false)
         setShowSuccessModal(true)
-        
-        // Refresh token balance
         checkUser()
-        
-        // Load pick percentages
-        loadPickPercentages()
       } else {
         alert(result.error)
       }
@@ -251,27 +280,6 @@ export default function PerfectSlateGame() {
       console.error('Error submitting picks:', error)
       alert('Failed to submit picks. Please try again.')
     }
-  }
-
-  const loadPickPercentages = async () => {
-    // This would load the pick percentages after submission
-    // For now, using mock data
-    const mockPercentages: Record<number, number> = {}
-    picks.forEach(pick => {
-      mockPercentages[pick.id] = Math.floor(Math.random() * 100)
-    })
-    setPickPercentages(mockPercentages)
-  }
-
-  const isPickSelected = (gameId: number, pickType: string, selection: string) => {
-    return selectedPicks.some(
-      p => p.gameId === gameId && p.pickType === pickType && p.selection === selection
-    )
-  }
-
-  const getPickPercentage = (pickId: number) => {
-    if (!isSubmitted) return null
-    return pickPercentages[pickId] || 0
   }
 
   const GameCard = ({ game }: { game: Game }) => {
@@ -284,178 +292,147 @@ export default function PerfectSlateGame() {
     const overTotal = totals.find(p => p.selection === 'over')
     const underTotal = totals.find(p => p.selection === 'under')
     
+    const hasToken = gamesWithTokens.has(game.id)
+    const isGameDisabled = hasToken || isSubmitted
+    
+    // Get city names
+    const homeCity = getCityName(game.home_team)
+    const awayCity = getCityName(game.away_team)
+    
     return (
-      <div className="bg-white border-4 border-gray-800 p-4 pixel-card mb-6 relative card-hover"
-           style={{ boxShadow: '8px 8px 0px rgba(0,0,0,0.3)' }}>
-        
-        {/* Game Time */}
-        <div className="flex justify-between items-center mb-3">
-          <div className="flex items-center space-x-2">
-            <Clock className="w-4 h-4 text-gray-700" />
-            <span className="text-sm font-bold text-gray-700 pixel-font">
+      <div className={`bg-white rounded-2xl p-6 shadow-lg border-4 ${hasToken ? 'border-yellow-400 bg-yellow-50' : 'border-gray-200'} hover:shadow-xl transition-all duration-300`}>
+        {/* Header */}
+        <div className="flex justify-between items-center mb-4">
+          <div className="flex items-center space-x-2 text-gray-600">
+            <Clock className="w-4 h-4" />
+            <span className="text-sm pixel-font">
               {new Date(game.scheduled_time).toLocaleTimeString('en-US', { 
                 hour: 'numeric', 
-                minute: '2-digit' 
-              })}
+                minute: '2-digit',
+                timeZone: 'America/New_York'
+              })} ET
             </span>
           </div>
           
           {/* Token Button */}
           <button
-            onClick={() => {
-  if (tokensUsed < 5 && !isSubmitted) {
-    setTokensUsed(prev => prev + 1)
-  }
-}}
-            disabled={isSubmitted || tokensUsed >= 5}
-            className={`
-              px-3 py-1 text-xs font-bold border-2 pixel-button
-              ${tokensUsed < 5 && !isSubmitted
-                ? 'bg-yellow-400 border-yellow-600 hover:bg-yellow-300 cursor-pointer'
-                : 'bg-gray-300 border-gray-500 cursor-not-allowed'
-              }
-            `}
+            onClick={() => handleTokenToggle(game.id)}
+            className={`flex items-center space-x-1 px-3 py-1 rounded-full text-sm pixel-font transition-all ${
+              hasToken 
+                ? 'bg-yellow-400 text-yellow-900 shadow-md' 
+                : 'bg-gray-100 hover:bg-yellow-100 text-gray-700'
+            }`}
           >
-            <div className="flex items-center space-x-1">
-              <Zap className="w-3 h-3" />
-              <span>USE TOKEN</span>
-            </div>
+            <Zap className={`w-4 h-4 ${hasToken ? 'animate-pulse' : ''}`} />
+            <span>{hasToken ? 'TOKEN USED' : 'USE TOKEN'}</span>
           </button>
         </div>
         
         {/* Teams */}
-        <div className="text-center mb-4">
-          <div className="text-lg font-bold text-gray-900 pixel-font">
-            {game.away_team} @ {game.home_team}
+        <div className="text-center mb-6">
+          <div className="text-xl font-bold pixel-font">
+            <span className="text-gray-700">{awayCity}</span>
+            <span className="text-gray-500 mx-2">@</span>
+            <span className="text-gray-700">{homeCity}</span>
           </div>
         </div>
         
-        {/* Spreads */}
-        <div className="mb-4">
-          <div className="text-xs font-bold text-gray-600 mb-2 text-center pixel-font">SPREAD</div>
-          <div className="grid grid-cols-2 gap-2">
-            <PickButton
-              pick={awaySpread!}
-              game={game}
-              displayText={`${game.away_team_short} ${game.away_spread > 0 ? '+' : ''}${game.away_spread}`}
-              isSelected={isPickSelected(game.id, 'spread', 'away')}
-              onSelect={() => handlePickSelect(game.id, 'spread', 'away', 
-                `${game.away_team_short} ${game.away_spread > 0 ? '+' : ''}${game.away_spread}`, 
-                awaySpread!.id
-              )}
-              percentage={getPickPercentage(awaySpread!.id)}
-              disabled={isSubmitted}
-            />
-            <PickButton
-              pick={homeSpread!}
-              game={game}
-              displayText={`${game.home_team_short} ${game.home_spread > 0 ? '+' : ''}${game.home_spread}`}
-              isSelected={isPickSelected(game.id, 'spread', 'home')}
-              onSelect={() => handlePickSelect(game.id, 'spread', 'home',
-                `${game.home_team_short} ${game.home_spread > 0 ? '+' : ''}${game.home_spread}`,
-                homeSpread!.id
-              )}
-              percentage={getPickPercentage(homeSpread!.id)}
-              disabled={isSubmitted}
-            />
+        {/* Picks Grid */}
+        <div className="space-y-4">
+          {/* Spread */}
+          <div>
+            <div className="text-center text-xs font-bold text-gray-500 mb-2 pixel-font">SPREAD</div>
+            <div className="grid grid-cols-2 gap-3">
+              <PickButton
+                text={`${awayCity} ${game.away_spread > 0 ? '+' : ''}${game.away_spread}`}
+                isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.selection === 'away')}
+                onClick={() => handlePickSelect(game.id, 'spread', 'away', 
+                  `${awayCity} ${game.away_spread > 0 ? '+' : ''}${game.away_spread}`, 
+                  awaySpread!.id
+                )}
+                disabled={isGameDisabled}
+              />
+              <PickButton
+                text={`${homeCity} ${game.home_spread > 0 ? '+' : ''}${game.home_spread}`}
+                isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.selection === 'home')}
+                onClick={() => handlePickSelect(game.id, 'spread', 'home',
+                  `${homeCity} ${game.home_spread > 0 ? '+' : ''}${game.home_spread}`,
+                  homeSpread!.id
+                )}
+                disabled={isGameDisabled}
+              />
+            </div>
+          </div>
+          
+          {/* Total */}
+          <div>
+            <div className="text-center text-xs font-bold text-gray-500 mb-2 pixel-font">TOTAL RUNS</div>
+            <div className="grid grid-cols-2 gap-3">
+              <PickButton
+                text={`Over ${game.total_points}`}
+                isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'total' && p.selection === 'over')}
+                onClick={() => handlePickSelect(game.id, 'total', 'over',
+                  `Over ${game.total_points}`,
+                  overTotal!.id
+                )}
+                disabled={isGameDisabled}
+              />
+              <PickButton
+                text={`Under ${game.total_points}`}
+                isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'total' && p.selection === 'under')}
+                onClick={() => handlePickSelect(game.id, 'total', 'under',
+                  `Under ${game.total_points}`,
+                  underTotal!.id
+                )}
+                disabled={isGameDisabled}
+              />
+            </div>
           </div>
         </div>
         
-        {/* Totals */}
-        <div>
-          <div className="text-xs font-bold text-gray-600 mb-2 text-center pixel-font">TOTAL</div>
-          <div className="grid grid-cols-2 gap-2">
-            <PickButton
-              pick={overTotal!}
-              game={game}
-              displayText={`Over ${game.total_points}`}
-              isSelected={isPickSelected(game.id, 'total', 'over')}
-              onSelect={() => handlePickSelect(game.id, 'total', 'over',
-                `Over ${game.total_points}`,
-                overTotal!.id
-              )}
-              percentage={getPickPercentage(overTotal!.id)}
-              disabled={isSubmitted}
-            />
-            <PickButton
-              pick={underTotal!}
-              game={game}
-              displayText={`Under ${game.total_points}`}
-              isSelected={isPickSelected(game.id, 'total', 'under')}
-              onSelect={() => handlePickSelect(game.id, 'total', 'under',
-                `Under ${game.total_points}`,
-                underTotal!.id
-              )}
-              percentage={getPickPercentage(underTotal!.id)}
-              disabled={isSubmitted}
-            />
+        {/* Token Indicator */}
+        {hasToken && (
+          <div className="mt-4 text-center">
+            <span className="text-xs text-yellow-700 pixel-font animate-pulse">
+              🎯 TOKEN APPLIED - NO PICKS NEEDED
+            </span>
           </div>
-        </div>
+        )}
       </div>
     )
   }
 
-  const PickButton = ({ 
-    pick, 
-    game, 
-    displayText, 
-    isSelected, 
-    onSelect, 
-    percentage,
-    disabled 
-  }: any) => {
-    const buttonId = `${game.id}-${pick.pick_type}-${pick.selection}`
-    const isShaking = shakeElement === buttonId
-    
-    // Determine if this pick is "hot" or "cold"
-    const isHot = percentage && percentage > 70
-    const isCold = percentage && percentage < 30
-    
+  const PickButton = ({ text, isSelected, onClick, disabled }: any) => {
     return (
       <button
-        onClick={onSelect}
+        onClick={onClick}
         disabled={disabled}
         className={`
-          relative w-full px-3 py-2 text-sm font-bold border-4 pixel-button button-hover
+          relative px-4 py-3 rounded-xl pixel-font text-sm font-bold transition-all duration-200
           ${isSelected 
-            ? 'bg-yellow-400 border-yellow-600 text-white pixel-glow coin-flip' 
+            ? 'bg-blue-500 text-white shadow-lg transform scale-105' 
             : disabled
-            ? 'bg-gray-300 border-gray-500 text-white cursor-not-allowed'
-            : 'bg-blue-500 border-blue-700 text-white hover:scale-105 cursor-pointer'
+            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            : 'bg-gray-100 hover:bg-blue-100 text-gray-700 hover:shadow-md hover:scale-102'
           }
-          ${isShaking ? 'shake' : ''}
         `}
-        style={{ boxShadow: '4px 4px 0px rgba(0,0,0,0.2)' }}
       >
-        {/* Percentage background */}
-        {percentage !== null && (
-          <div 
-            className="absolute inset-0 bg-green-400 opacity-30"
-            style={{ width: `${percentage}%` }}
-          />
-        )}
-        
-        {/* Button content */}
-        <div className="relative z-10 flex justify-between items-center">
-          <span className="text-outline">{displayText}</span>
-          <div className="flex items-center space-x-1">
-            {isHot && <Flame className="w-3 h-3 text-orange-500" />}
-            {isCold && <Snowflake className="w-3 h-3 text-blue-300" />}
-            {percentage !== null && (
-              <span className="text-xs">{percentage}%</span>
-            )}
+        {text}
+        {isSelected && (
+          <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-400 rounded-full flex items-center justify-center">
+            <Star className="w-3 h-3 text-white" fill="white" />
           </div>
-        </div>
+        )}
       </button>
     )
   }
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-pixel-blue flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-b from-blue-400 to-green-400 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-bounce mb-4">
-            <Ticket className="w-16 h-16 text-yellow-400" />
+            <Ticket className="w-16 h-16 text-white" />
           </div>
           <h2 className="text-2xl font-bold text-white pixel-font">LOADING...</h2>
         </div>
@@ -464,130 +441,119 @@ export default function PerfectSlateGame() {
   }
 
   return (
-    <div className="min-h-screen pixelated-field">
-      {/* Navigation */}
-      <nav className="bg-gray-900 border-b-4 border-gray-800 p-4">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          {/* Sport Selector */}
-          <div className="relative">
-            <button
-              onClick={() => setShowSportDropdown(!showSportDropdown)}
-              className="flex items-center space-x-2 text-white pixel-font text-sm hover:text-yellow-400"
-            >
-              <span>PERFECT SLATE {selectedSport}</span>
-              <ChevronDown className="w-4 h-4" />
-            </button>
+    <div className="min-h-screen bg-gradient-to-b from-green-400 to-green-500 relative overflow-hidden">
+      {/* Animated Clouds */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <Cloud className="absolute top-10 left-10 text-white opacity-20 w-32 h-32 animate-float-slow" />
+        <Cloud className="absolute top-20 right-20 text-white opacity-20 w-24 h-24 animate-float" />
+        <Cloud className="absolute top-32 left-1/3 text-white opacity-15 w-40 h-40 animate-float-slow" />
+        <Cloud className="absolute top-16 right-1/3 text-white opacity-25 w-20 h-20 animate-float" />
+      </div>
+      
+      {/* Navigation - Matching Sky Blue */}
+      <nav className="bg-gradient-to-b from-blue-400 to-blue-500 relative z-10">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex justify-between items-center">
+            {/* Sport Selector */}
+            <div className="relative">
+              <button
+                onClick={() => setShowSportDropdown(!showSportDropdown)}
+                className="flex items-center space-x-2 text-white pixel-font text-lg hover:text-yellow-300 transition-colors"
+              >
+                <span>PERFECT SLATE {selectedSport}</span>
+                <ChevronDown className="w-5 h-5" />
+              </button>
+              
+              {showSportDropdown && (
+                <div className="absolute top-full left-0 mt-2 bg-white rounded-xl shadow-xl overflow-hidden">
+                  <button
+                    onClick={() => {
+                      setSelectedSport('NFL')
+                      setShowSportDropdown(false)
+                    }}
+                    className="block w-full text-left px-6 py-3 pixel-font text-sm hover:bg-blue-50 transition-colors"
+                  >
+                    NFL
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedSport('NCAAF')
+                      setShowSportDropdown(false)
+                    }}
+                    className="block w-full text-left px-6 py-3 pixel-font text-sm hover:bg-blue-50 transition-colors"
+                  >
+                    NCAAF
+                  </button>
+                </div>
+              )}
+            </div>
             
-            {showSportDropdown && (
-              <div className="absolute top-full left-0 mt-2 bg-white border-4 border-gray-800 pixel-card z-50"
-                   style={{ boxShadow: '4px 4px 0px rgba(0,0,0,0.3)' }}>
-                <button
-                  onClick={() => {
-                    setSelectedSport('NFL')
-                    setShowSportDropdown(false)
-                  }}
-                  className="block w-full text-left px-4 py-2 pixel-font text-xs hover:bg-gray-100"
-                >
-                  NFL
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedSport('NCAAF')
-                    setShowSportDropdown(false)
-                  }}
-                  className="block w-full text-left px-4 py-2 pixel-font text-xs hover:bg-gray-100"
-                >
-                  NCAAF
-                </button>
-              </div>
-            )}
-          </div>
-          
-          {/* Nav Links */}
-          <div className="flex items-center space-x-6">
-            <button className="text-white pixel-font text-xs hover:text-yellow-400 flex items-center space-x-1">
-              <FileText className="w-4 h-4" />
-              <span>RULES</span>
-            </button>
-            <button className="text-white pixel-font text-xs hover:text-yellow-400 flex items-center space-x-1">
-              <BarChart3 className="w-4 h-4" />
-              <span>LEADERBOARDS</span>
-            </button>
-            <button className="text-white pixel-font text-xs hover:text-yellow-400 flex items-center space-x-1">
-              <User className="w-4 h-4" />
-              <span>PROFILE</span>
-            </button>
+            {/* Nav Links */}
+            <div className="flex items-center space-x-6">
+              <button className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center space-x-2">
+                <FileText className="w-4 h-4" />
+                <span>RULES</span>
+              </button>
+              <button className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center space-x-2">
+                <BarChart3 className="w-4 h-4" />
+                <span>LEADERBOARDS</span>
+              </button>
+              <button className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center space-x-2">
+                <User className="w-4 h-4" />
+                <span>PROFILE</span>
+              </button>
+            </div>
           </div>
         </div>
       </nav>
       
-      {/* Game Header */}
-      <div className="text-center py-8 px-4">
-        {/* Prize Pool */}
-        <button
-          onClick={() => setShowPrizeHistory(true)}
-          className="inline-block mb-6 transform hover:scale-105 transition-transform"
-        >
-          <div className="bg-green-500 border-4 border-green-700 px-8 py-4 pixel-button pulse-glow"
-               style={{ boxShadow: '6px 6px 0px rgba(0,0,0,0.3)' }}>
-            <div className="flex items-center space-x-2">
-              <DollarSign className="w-8 h-8" />
-              <span className="text-3xl font-bold pixel-font">
-                {currentContest?.final_prize_pool.toLocaleString() || '0'}
-              </span>
-              <AlertCircle className="w-4 h-4" />
+      {/* Header Content */}
+      <div className="relative z-10 py-8">
+        <div className="text-center">
+          {/* Prize Pool */}
+          <button
+            onClick={() => setShowPrizeHistory(true)}
+            className="inline-block mb-6 group"
+          >
+            <div className="bg-yellow-400 rounded-2xl px-8 py-4 shadow-xl transform group-hover:scale-105 transition-all duration-300">
+              <div className="flex items-center space-x-3">
+                <Coins className="w-8 h-8 text-yellow-700" />
+                <span className="text-3xl font-bold pixel-font text-yellow-900">
+                  ${currentContest?.final_prize_pool.toLocaleString() || '0'}
+                </span>
+                <AlertCircle className="w-5 h-5 text-yellow-700" />
+              </div>
             </div>
-          </div>
-        </button>
-        
-        {/* Stats Row */}
-        <div className="flex justify-center items-center space-x-8 mb-6">
-          <div className="text-white">
-            <div className="flex items-center space-x-2">
-              <Users className="w-5 h-5" />
-              <span className="text-xl font-bold pixel-font">
-                {currentContest?.total_entries || 0}
-              </span>
-            </div>
-            <div className="text-xs pixel-font opacity-80">ENTRIES</div>
-          </div>
+          </button>
           
-          <div className="text-white">
-            <div className="flex items-center space-x-2">
-              <Clock className="w-5 h-5" />
-              <span className="text-xl font-bold pixel-font">
-                {timeRemaining}
-              </span>
+          {/* Stats */}
+          <div className="flex justify-center items-center space-x-8 text-white">
+            <div>
+              <div className="flex items-center justify-center space-x-2 mb-1">
+                <Users className="w-5 h-5" />
+                <span className="text-2xl font-bold pixel-font">
+                  {currentContest?.total_entries || 0}
+                </span>
+              </div>
+              <div className="text-xs pixel-font opacity-90">ENTRIES</div>
             </div>
-            <div className="text-xs pixel-font opacity-80">TIME LEFT</div>
+            
+            <div>
+              <div className="flex items-center justify-center space-x-2 mb-1">
+                <Clock className="w-5 h-5" />
+                <span className="text-2xl font-bold pixel-font">
+                  {timeRemaining}
+                </span>
+              </div>
+              <div className="text-xs pixel-font opacity-90">TIME LEFT</div>
+            </div>
           </div>
-        </div>
-        
-        {/* Today's Leaders Preview */}
-        <button className="bg-purple-600 border-4 border-purple-800 px-6 py-2 pixel-button text-white hover:bg-purple-500"
-                style={{ boxShadow: '4px 4px 0px rgba(0,0,0,0.3)' }}>
-          <div className="flex items-center space-x-2">
-            <Trophy className="w-4 h-4" />
-            <span className="text-sm font-bold pixel-font">TODAY&apos;S LEADERS</span>
-          </div>
-        </button>
-      </div>
-      
-      {/* Pick Your Slate */}
-      <div className="text-center mb-8">
-        <h2 className="text-2xl font-bold text-white pixel-font mb-4">
-          PICK YOUR SLATE
-        </h2>
-        <div className="flex justify-center space-x-2">
-          <ArrowDown className="w-8 h-8 text-yellow-400 bounce-1" strokeWidth={3} />
-          <ArrowDown className="w-8 h-8 text-yellow-400 bounce-2" strokeWidth={3} />
-          <ArrowDown className="w-8 h-8 text-yellow-400 bounce-3" strokeWidth={3} />
         </div>
       </div>
       
       {/* Games Grid */}
-      <div className="max-w-4xl mx-auto px-4 pb-20">
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="relative z-10 max-w-6xl mx-auto px-4 pb-32">
+        <div className="space-y-4">
           {games.map(game => (
             <GameCard key={game.id} game={game} />
           ))}
@@ -595,21 +561,23 @@ export default function PerfectSlateGame() {
       </div>
       
       {/* Floating Pick Counter */}
-      {(selectedPicks.length > 0 || tokensUsed > 0) && !isSubmitted && (
+      {(selectedPicks.length > 0 || gamesWithTokens.size > 0) && !isSubmitted && (
         <div className="fixed bottom-6 right-6 z-50">
           <button
             onClick={() => setShowSlateModal(true)}
-            className="relative floating-counter"
+            className="bg-white rounded-full shadow-xl p-6 hover:scale-110 transition-transform duration-300"
           >
-            <div className="w-20 h-20 bg-yellow-400 border-4 border-yellow-600 rounded-full flex flex-col items-center justify-center pixel-shadow hover:scale-110 transition-transform">
-              <span className="text-2xl font-bold text-black pixel-font">
-                {selectedPicks.length + tokensUsed}
-              </span>
-              <span className="text-xs pixel-font">PICKS</span>
+            <div className="text-center">
+              <div className="text-3xl font-bold pixel-font text-gray-800">
+                {selectedPicks.length + gamesWithTokens.size}
+              </div>
+              <div className="text-xs pixel-font text-gray-600">PICKS</div>
             </div>
-            {selectedPicks.length + tokensUsed === 10 && (
-              <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 border-2 border-green-700 rounded-full flex items-center justify-center animate-bounce">
-                <CheckCircle className="w-4 h-4 text-white" />
+            {selectedPicks.length + gamesWithTokens.size === 10 && (
+              <div className="absolute -top-2 -right-2 animate-bounce">
+                <div className="bg-green-400 rounded-full p-2">
+                  <Trophy className="w-4 h-4 text-white" />
+                </div>
               </div>
             )}
           </button>
@@ -619,11 +587,10 @@ export default function PerfectSlateGame() {
       {/* Slate Modal */}
       {showSlateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white border-4 border-gray-800 p-6 pixel-card max-w-md w-full max-h-96 overflow-y-auto"
-               style={{ boxShadow: '8px 8px 0px rgba(0,0,0,0.3)' }}>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold pixel-font">
-                YOUR SLATE ({selectedPicks.length + tokensUsed}/10)
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-bold pixel-font">
+                YOUR SLATE ({selectedPicks.length + gamesWithTokens.size}/10)
               </h3>
               <button onClick={() => setShowSlateModal(false)}>
                 <X className="w-6 h-6" />
@@ -632,51 +599,60 @@ export default function PerfectSlateGame() {
             
             {/* Token Balance */}
             {user && (
-              <div className="bg-yellow-100 border-2 border-yellow-400 p-3 mb-4 pixel-button">
+              <div className="bg-yellow-50 border-2 border-yellow-300 rounded-xl p-4 mb-6">
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-bold pixel-font">TOKEN BALANCE:</span>
-                  <span className="text-lg font-bold pixel-font">{tokenBalance}</span>
+                  <span className="text-xl font-bold pixel-font text-yellow-700">{tokenBalance}</span>
                 </div>
                 <div className="text-xs pixel-font mt-1 text-gray-600">
-                  Using {tokensUsed} token{tokensUsed !== 1 ? 's' : ''} this slate
+                  Using {gamesWithTokens.size} token{gamesWithTokens.size !== 1 ? 's' : ''} this slate
                 </div>
               </div>
             )}
             
             {/* Picks List */}
-            <div className="space-y-2 mb-4">
+            <div className="space-y-3 mb-6">
               {selectedPicks.map((pick, index) => (
-                <div key={index} className="bg-gray-100 border-2 border-gray-400 p-3 pixel-button flex justify-between items-center">
+                <div key={index} className="bg-gray-50 rounded-xl p-4 flex justify-between items-center">
                   <span className="text-sm font-bold pixel-font">{pick.displayText}</span>
                   <button onClick={() => removePick(index)}>
-                    <Trash2 className="w-4 h-4 text-red-600" />
+                    <Trash2 className="w-4 h-4 text-red-500 hover:text-red-700" />
                   </button>
                 </div>
               ))}
               
-              {/* Token slots */}
-              {Array.from({ length: tokensUsed }).map((_, index) => (
-                <div key={`token-${index}`} className="bg-yellow-100 border-2 border-yellow-400 p-3 pixel-button">
-                  <div className="flex items-center space-x-2">
-                    <Zap className="w-4 h-4 text-yellow-600" />
-                    <span className="text-sm font-bold pixel-font">TOKEN PICK</span>
+              {/* Token Games */}
+              {Array.from(gamesWithTokens).map((gameId) => {
+                const game = games.find(g => g.id === gameId)
+                if (!game) return null
+                return (
+                  <div key={`token-${gameId}`} className="bg-yellow-50 rounded-xl p-4 flex justify-between items-center">
+                    <div className="flex items-center space-x-2">
+                      <Zap className="w-4 h-4 text-yellow-600" />
+                      <span className="text-sm font-bold pixel-font">
+                        TOKEN: {getCityName(game.away_team)} @ {getCityName(game.home_team)}
+                      </span>
+                    </div>
+                    <button onClick={() => handleTokenToggle(gameId)}>
+                      <Trash2 className="w-4 h-4 text-red-500 hover:text-red-700" />
+                    </button>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
             
             {/* Actions */}
             <div className="flex space-x-3">
               <button
                 onClick={() => setShowSlateModal(false)}
-                className="flex-1 bg-gray-500 border-4 border-gray-700 py-3 px-4 font-bold text-sm pixel-button text-white hover:bg-gray-400"
+                className="flex-1 bg-gray-200 hover:bg-gray-300 py-3 px-4 rounded-xl font-bold text-sm pixel-font transition-colors"
               >
                 KEEP BUILDING
               </button>
-              {selectedPicks.length + tokensUsed === 10 && (
+              {selectedPicks.length + gamesWithTokens.size === 10 && (
                 <button
                   onClick={() => setShowConfirmModal(true)}
-                  className="flex-1 bg-green-500 border-4 border-green-700 py-3 px-4 font-bold text-sm pixel-button text-white hover:bg-green-400"
+                  className="flex-1 bg-green-500 hover:bg-green-600 py-3 px-4 rounded-xl font-bold text-sm pixel-font text-white transition-colors"
                 >
                   SUBMIT SLATE
                 </button>
@@ -689,8 +665,7 @@ export default function PerfectSlateGame() {
       {/* Confirm Modal */}
       {showConfirmModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white border-4 border-gray-800 p-8 pixel-card max-w-sm w-full"
-               style={{ boxShadow: '8px 8px 0px rgba(0,0,0,0.3)' }}>
+          <div className="bg-white rounded-2xl p-8 max-w-sm w-full">
             <div className="text-center">
               <Trophy className="w-16 h-16 mx-auto mb-4 text-yellow-500" />
               <h3 className="text-xl font-bold pixel-font mb-4">LOCK IT IN?</h3>
@@ -700,13 +675,13 @@ export default function PerfectSlateGame() {
               <div className="flex space-x-3">
                 <button
                   onClick={() => setShowConfirmModal(false)}
-                  className="flex-1 bg-gray-500 border-4 border-gray-700 py-3 px-4 font-bold text-sm pixel-button text-white hover:bg-gray-400"
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 py-3 px-4 rounded-xl font-bold text-sm pixel-font transition-colors"
                 >
                   WAIT
                 </button>
                 <button
                   onClick={submitSlate}
-                  className="flex-1 bg-green-500 border-4 border-green-700 py-3 px-4 font-bold text-sm pixel-button text-white hover:bg-green-400"
+                  className="flex-1 bg-green-500 hover:bg-green-600 py-3 px-4 rounded-xl font-bold text-sm pixel-font text-white transition-colors"
                 >
                   SUBMIT!
                 </button>
@@ -719,8 +694,7 @@ export default function PerfectSlateGame() {
       {/* Success Modal */}
       {showSuccessModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white border-4 border-gray-800 p-8 pixel-card"
-               style={{ boxShadow: '8px 8px 0px rgba(0,0,0,0.3)' }}>
+          <div className="bg-white rounded-2xl p-8">
             <div className="text-center">
               <div className="mb-4 animate-bounce">
                 <Trophy className="w-16 h-16 mx-auto text-yellow-500" />
@@ -731,7 +705,7 @@ export default function PerfectSlateGame() {
               </p>
               <button
                 onClick={() => setShowSuccessModal(false)}
-                className="bg-blue-500 border-4 border-blue-700 px-6 py-3 pixel-button text-white font-bold hover:bg-blue-400"
+                className="bg-blue-500 hover:bg-blue-600 px-6 py-3 rounded-xl text-white font-bold pixel-font transition-colors"
               >
                 LET&apos;S GO!
               </button>
@@ -739,6 +713,26 @@ export default function PerfectSlateGame() {
           </div>
         </div>
       )}
+      
+      <style jsx>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-20px); }
+        }
+        
+        @keyframes float-slow {
+          0%, 100% { transform: translateY(0px) translateX(0px); }
+          50% { transform: translateY(-30px) translateX(10px); }
+        }
+        
+        .animate-float {
+          animation: float 3s ease-in-out infinite;
+        }
+        
+        .animate-float-slow {
+          animation: float-slow 5s ease-in-out infinite;
+        }
+      `}</style>
     </div>
   )
 }
