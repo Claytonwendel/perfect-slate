@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect } from 'react'
 import { 
-  Users, DollarSign, Trophy, Clock, Ticket, X, Trash2,
-  ChevronDown, Zap, AlertCircle, FileText, BarChart3, 
-  User, Coins, Star, Cloud
+  Users, DollarSign, Trophy, Clock, X, Trash2,
+  ChevronDown, AlertCircle, FileText, BarChart3, 
+  User, Coins, Zap, Menu, CircleDollarSign
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -70,7 +70,7 @@ const getCityName = (teamName: string): string => {
     'Patriots', 'Bills', 'Jets', 'Dolphins', 'Ravens', 'Bengals', 
     'Browns', 'Steelers', 'Texans', 'Colts', 'Jaguars', 'Titans',
     'Broncos', 'Raiders', 'Chargers', 'Cowboys', 'Eagles', 'Giants',
-    'Commanders', 'Cardinals', '49ers', 'Seahawks', 'Rams', 'Saints',
+    'Commanders', '49ers', 'Seahawks', 'Rams', 'Saints',
     'Falcons', 'Panthers', 'Rays', 'Orioles', 'Blue Jays', 'Yankees',
     'Red Sox', 'Guardians', 'Tigers', 'Royals', 'Twins', 'White Sox',
     'Astros', 'Athletics', 'Angels', 'Mariners', 'Rangers', 'Phillies',
@@ -86,13 +86,41 @@ const getCityName = (teamName: string): string => {
     }
   })
   
-  return city
+  // Shorten long city names for mobile
+  const shortNames: Record<string, string> = {
+    'San Francisco': 'SF',
+    'Los Angeles': 'LA',
+    'New York': 'NY',
+    'Tampa Bay': 'Tampa',
+    'Green Bay': 'GB',
+    'New England': 'NE',
+    'Kansas City': 'KC',
+    'Las Vegas': 'LV',
+    'San Diego': 'SD',
+    'North Carolina': 'UNC',
+    'South Carolina': 'SC'
+  }
+  
+  return shortNames[city] || city
 }
+
+// Custom Token Icon Component
+const TokenIcon = ({ className }: { className?: string }) => (
+  <svg 
+    className={className} 
+    viewBox="0 0 24 24" 
+    fill="currentColor"
+  >
+    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" />
+    <text x="12" y="16" textAnchor="middle" fontSize="10" fontWeight="bold">T</text>
+  </svg>
+)
 
 export default function PerfectSlateGame() {
   // State
   const [selectedSport, setSelectedSport] = useState<'NFL' | 'NCAAF'>('NFL')
   const [showSportDropdown, setShowSportDropdown] = useState(false)
+  const [showMobileMenu, setShowMobileMenu] = useState(false)
   const [games, setGames] = useState<Game[]>([])
   const [picks, setPicks] = useState<Pick[]>([])
   const [currentContest, setCurrentContest] = useState<Contest | null>(null)
@@ -300,12 +328,12 @@ export default function PerfectSlateGame() {
     const awayCity = getCityName(game.away_team)
     
     return (
-      <div className={`bg-white rounded-2xl p-6 shadow-lg border-4 ${hasToken ? 'border-yellow-400 bg-yellow-50' : 'border-gray-200'} hover:shadow-xl transition-all duration-300`}>
+      <div className={`bg-white rounded-2xl p-4 md:p-6 shadow-lg border-4 ${hasToken ? 'border-yellow-400 bg-yellow-50' : 'border-gray-200'} hover:shadow-xl transition-all duration-300`}>
         {/* Header */}
-        <div className="flex justify-between items-center mb-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4">
           <div className="flex items-center space-x-2 text-gray-600">
             <Clock className="w-4 h-4" />
-            <span className="text-sm pixel-font">
+            <span className="text-xs sm:text-sm pixel-font">
               {new Date(game.scheduled_time).toLocaleTimeString('en-US', { 
                 hour: 'numeric', 
                 minute: '2-digit',
@@ -317,20 +345,20 @@ export default function PerfectSlateGame() {
           {/* Token Button */}
           <button
             onClick={() => handleTokenToggle(game.id)}
-            className={`flex items-center space-x-1 px-3 py-1 rounded-full text-sm pixel-font transition-all ${
+            className={`flex items-center space-x-1 px-3 py-1 rounded-full text-xs sm:text-sm pixel-font transition-all ${
               hasToken 
                 ? 'bg-yellow-400 text-yellow-900 shadow-md' 
                 : 'bg-gray-100 hover:bg-yellow-100 text-gray-700'
             }`}
           >
-            <Zap className={`w-4 h-4 ${hasToken ? 'animate-pulse' : ''}`} />
-            <span>{hasToken ? 'TOKEN USED' : 'USE TOKEN'}</span>
+            <TokenIcon className={`w-4 h-4 ${hasToken ? 'animate-pulse' : ''}`} />
+            <span className="whitespace-nowrap">{hasToken ? 'TOKEN USED' : 'USE TOKEN'}</span>
           </button>
         </div>
         
         {/* Teams */}
-        <div className="text-center mb-6">
-          <div className="text-xl font-bold pixel-font">
+        <div className="text-center mb-4 md:mb-6">
+          <div className="text-base sm:text-lg md:text-xl font-bold pixel-font">
             <span className="text-gray-700">{awayCity}</span>
             <span className="text-gray-500 mx-2">@</span>
             <span className="text-gray-700">{homeCity}</span>
@@ -338,11 +366,11 @@ export default function PerfectSlateGame() {
         </div>
         
         {/* Picks Grid */}
-        <div className="space-y-4">
+        <div className="space-y-3 md:space-y-4">
           {/* Spread */}
           <div>
             <div className="text-center text-xs font-bold text-gray-500 mb-2 pixel-font">SPREAD</div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2 md:gap-3">
               <PickButton
                 text={`${awayCity} ${game.away_spread > 0 ? '+' : ''}${game.away_spread}`}
                 isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.selection === 'away')}
@@ -367,7 +395,7 @@ export default function PerfectSlateGame() {
           {/* Total */}
           <div>
             <div className="text-center text-xs font-bold text-gray-500 mb-2 pixel-font">TOTAL RUNS</div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2 md:gap-3">
               <PickButton
                 text={`Over ${game.total_points}`}
                 isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'total' && p.selection === 'over')}
@@ -394,7 +422,7 @@ export default function PerfectSlateGame() {
         {hasToken && (
           <div className="mt-4 text-center">
             <span className="text-xs text-yellow-700 pixel-font animate-pulse">
-              🎯 TOKEN APPLIED - NO PICKS NEEDED
+              TOKEN APPLIED - NO PICKS NEEDED
             </span>
           </div>
         )}
@@ -408,21 +436,19 @@ export default function PerfectSlateGame() {
         onClick={onClick}
         disabled={disabled}
         className={`
-          relative px-4 py-3 rounded-xl pixel-font text-sm font-bold transition-all duration-200
+          relative px-3 md:px-4 py-2 md:py-3 rounded-xl pixel-font text-xs md:text-sm font-bold transition-all duration-200 overflow-hidden
           ${isSelected 
-            ? 'bg-blue-500 text-white shadow-lg transform scale-105' 
+            ? 'bg-yellow-400 border-2 border-yellow-600 text-yellow-900 shadow-lg' 
             : disabled
             ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            : 'bg-gray-100 hover:bg-blue-100 text-gray-700 hover:shadow-md hover:scale-102'
+            : 'bg-gray-100 hover:bg-blue-100 text-gray-700 hover:shadow-md'
           }
         `}
       >
-        {text}
-        {isSelected && (
-          <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-400 rounded-full flex items-center justify-center">
-            <Star className="w-3 h-3 text-white" fill="white" />
-          </div>
-        )}
+        <span className="relative z-10 flex items-center justify-center space-x-1">
+          {isSelected && <Zap className="w-3 h-3 md:w-4 md:h-4" />}
+          <span className="truncate">{text}</span>
+        </span>
       </button>
     )
   }
@@ -432,7 +458,7 @@ export default function PerfectSlateGame() {
       <div className="min-h-screen bg-gradient-to-b from-blue-400 to-green-400 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-bounce mb-4">
-            <Ticket className="w-16 h-16 text-white" />
+            <CircleDollarSign className="w-16 h-16 text-white" />
           </div>
           <h2 className="text-2xl font-bold text-white pixel-font">LOADING...</h2>
         </div>
@@ -440,38 +466,32 @@ export default function PerfectSlateGame() {
     )
   }
 
+  const totalPicks = selectedPicks.length + gamesWithTokens.size
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-green-400 to-green-500 relative overflow-hidden">
-      {/* Animated Clouds */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <Cloud className="absolute top-10 left-10 text-white opacity-20 w-32 h-32 animate-float-slow" />
-        <Cloud className="absolute top-20 right-20 text-white opacity-20 w-24 h-24 animate-float" />
-        <Cloud className="absolute top-32 left-1/3 text-white opacity-15 w-40 h-40 animate-float-slow" />
-        <Cloud className="absolute top-16 right-1/3 text-white opacity-25 w-20 h-20 animate-float" />
-      </div>
-      
-      {/* Navigation - Matching Sky Blue */}
-      <nav className="bg-gradient-to-b from-blue-400 to-blue-500 relative z-10">
+    <div className="min-h-screen bg-gradient-to-b from-blue-400 via-blue-400 to-green-400 relative">
+      {/* Navigation */}
+      <nav className="bg-blue-400 relative z-20">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex justify-between items-center">
             {/* Sport Selector */}
             <div className="relative">
               <button
                 onClick={() => setShowSportDropdown(!showSportDropdown)}
-                className="flex items-center space-x-2 text-white pixel-font text-lg hover:text-yellow-300 transition-colors"
+                className="flex items-center space-x-2 text-white pixel-font text-sm md:text-lg hover:text-yellow-300 transition-colors"
               >
                 <span>PERFECT SLATE {selectedSport}</span>
-                <ChevronDown className="w-5 h-5" />
+                <ChevronDown className="w-4 h-4 md:w-5 md:h-5" />
               </button>
               
               {showSportDropdown && (
-                <div className="absolute top-full left-0 mt-2 bg-white rounded-xl shadow-xl overflow-hidden">
+                <div className="absolute top-full left-0 mt-2 bg-white rounded-xl shadow-xl overflow-hidden z-50">
                   <button
                     onClick={() => {
                       setSelectedSport('NFL')
                       setShowSportDropdown(false)
                     }}
-                    className="block w-full text-left px-6 py-3 pixel-font text-sm hover:bg-blue-50 transition-colors"
+                    className="block w-full text-left px-6 py-3 pixel-font text-xs md:text-sm hover:bg-blue-50 transition-colors"
                   >
                     NFL
                   </button>
@@ -480,7 +500,7 @@ export default function PerfectSlateGame() {
                       setSelectedSport('NCAAF')
                       setShowSportDropdown(false)
                     }}
-                    className="block w-full text-left px-6 py-3 pixel-font text-sm hover:bg-blue-50 transition-colors"
+                    className="block w-full text-left px-6 py-3 pixel-font text-xs md:text-sm hover:bg-blue-50 transition-colors"
                   >
                     NCAAF
                   </button>
@@ -488,8 +508,8 @@ export default function PerfectSlateGame() {
               )}
             </div>
             
-            {/* Nav Links */}
-            <div className="flex items-center space-x-6">
+            {/* Desktop Nav Links */}
+            <div className="hidden md:flex items-center space-x-6">
               <button className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center space-x-2">
                 <FileText className="w-4 h-4" />
                 <span>RULES</span>
@@ -503,35 +523,58 @@ export default function PerfectSlateGame() {
                 <span>PROFILE</span>
               </button>
             </div>
+            
+            {/* Mobile Menu Button */}
+            <button 
+              onClick={() => setShowMobileMenu(!showMobileMenu)}
+              className="md:hidden text-white"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
           </div>
+          
+          {/* Mobile Menu */}
+          {showMobileMenu && (
+            <div className="md:hidden mt-4 pb-4 border-t border-blue-300 pt-4">
+              <button className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">
+                RULES
+              </button>
+              <button className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">
+                LEADERBOARDS
+              </button>
+              <button className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">
+                PROFILE
+              </button>
+            </div>
+          )}
         </div>
       </nav>
       
-      {/* Header Content */}
-      <div className="relative z-10 py-8">
-        <div className="text-center">
+      {/* Header Content - Still Blue Background */}
+      <div className="bg-blue-400 relative z-10 pb-20">
+        <div className="text-center pt-8">
           {/* Prize Pool */}
           <button
             onClick={() => setShowPrizeHistory(true)}
             className="inline-block mb-6 group"
           >
-            <div className="bg-yellow-400 rounded-2xl px-8 py-4 shadow-xl transform group-hover:scale-105 transition-all duration-300">
-              <div className="flex items-center space-x-3">
-                <Coins className="w-8 h-8 text-yellow-700" />
-                <span className="text-3xl font-bold pixel-font text-yellow-900">
+            <div className="bg-yellow-400 rounded-2xl px-6 md:px-8 py-3 md:py-4 shadow-xl transform group-hover:scale-105 transition-all duration-300">
+              <div className="flex items-center space-x-2 md:space-x-3">
+                <Coins className="w-6 h-6 md:w-8 md:h-8 text-yellow-700" />
+                <span className="text-xl md:text-3xl font-bold pixel-font text-yellow-900">
                   ${currentContest?.final_prize_pool.toLocaleString() || '0'}
                 </span>
-                <AlertCircle className="w-5 h-5 text-yellow-700" />
+                <AlertCircle className="w-4 h-4 md:w-5 md:h-5 text-yellow-700" />
               </div>
             </div>
           </button>
           
           {/* Stats */}
-          <div className="flex justify-center items-center space-x-8 text-white">
+          <div className="flex justify-center items-center space-x-6 md:space-x-8 text-white">
             <div>
               <div className="flex items-center justify-center space-x-2 mb-1">
-                <Users className="w-5 h-5" />
-                <span className="text-2xl font-bold pixel-font">
+                <Users className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="text-lg md:text-2xl font-bold pixel-font">
                   {currentContest?.total_entries || 0}
                 </span>
               </div>
@@ -540,8 +583,8 @@ export default function PerfectSlateGame() {
             
             <div>
               <div className="flex items-center justify-center space-x-2 mb-1">
-                <Clock className="w-5 h-5" />
-                <span className="text-2xl font-bold pixel-font">
+                <Clock className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="text-lg md:text-2xl font-bold pixel-font">
                   {timeRemaining}
                 </span>
               </div>
@@ -551,8 +594,8 @@ export default function PerfectSlateGame() {
         </div>
       </div>
       
-      {/* Games Grid */}
-      <div className="relative z-10 max-w-6xl mx-auto px-4 pb-32">
+      {/* Games Grid - Starts in Green */}
+      <div className="relative z-10 max-w-6xl mx-auto px-4 pb-32 -mt-10">
         <div className="space-y-4">
           {games.map(game => (
             <GameCard key={game.id} game={game} />
@@ -561,19 +604,19 @@ export default function PerfectSlateGame() {
       </div>
       
       {/* Floating Pick Counter */}
-      {(selectedPicks.length > 0 || gamesWithTokens.size > 0) && !isSubmitted && (
+      {(totalPicks > 0) && !isSubmitted && (
         <div className="fixed bottom-6 right-6 z-50">
           <button
             onClick={() => setShowSlateModal(true)}
-            className="bg-white rounded-full shadow-xl p-6 hover:scale-110 transition-transform duration-300"
+            className={`${totalPicks > 0 ? 'bg-yellow-400' : 'bg-white'} rounded-full shadow-xl p-4 md:p-6 hover:scale-110 transition-all duration-300`}
           >
             <div className="text-center">
-              <div className="text-3xl font-bold pixel-font text-gray-800">
-                {selectedPicks.length + gamesWithTokens.size}
+              <div className="text-2xl md:text-3xl font-bold pixel-font text-gray-800">
+                {totalPicks}
               </div>
               <div className="text-xs pixel-font text-gray-600">PICKS</div>
             </div>
-            {selectedPicks.length + gamesWithTokens.size === 10 && (
+            {totalPicks === 10 && (
               <div className="absolute -top-2 -right-2 animate-bounce">
                 <div className="bg-green-400 rounded-full p-2">
                   <Trophy className="w-4 h-4 text-white" />
@@ -587,10 +630,10 @@ export default function PerfectSlateGame() {
       {/* Slate Modal */}
       {showSlateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full max-h-[80vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl p-6 md:p-8 max-w-md w-full max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-bold pixel-font">
-                YOUR SLATE ({selectedPicks.length + gamesWithTokens.size}/10)
+              <h3 className="text-xl md:text-2xl font-bold pixel-font">
+                YOUR SLATE ({totalPicks}/10)
               </h3>
               <button onClick={() => setShowSlateModal(false)}>
                 <X className="w-6 h-6" />
@@ -628,7 +671,7 @@ export default function PerfectSlateGame() {
                 return (
                   <div key={`token-${gameId}`} className="bg-yellow-50 rounded-xl p-4 flex justify-between items-center">
                     <div className="flex items-center space-x-2">
-                      <Zap className="w-4 h-4 text-yellow-600" />
+                      <TokenIcon className="w-4 h-4 text-yellow-600" />
                       <span className="text-sm font-bold pixel-font">
                         TOKEN: {getCityName(game.away_team)} @ {getCityName(game.home_team)}
                       </span>
@@ -642,14 +685,14 @@ export default function PerfectSlateGame() {
             </div>
             
             {/* Actions */}
-            <div className="flex space-x-3">
+            <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
               <button
                 onClick={() => setShowSlateModal(false)}
                 className="flex-1 bg-gray-200 hover:bg-gray-300 py-3 px-4 rounded-xl font-bold text-sm pixel-font transition-colors"
               >
                 KEEP BUILDING
               </button>
-              {selectedPicks.length + gamesWithTokens.size === 10 && (
+              {totalPicks === 10 && (
                 <button
                   onClick={() => setShowConfirmModal(true)}
                   className="flex-1 bg-green-500 hover:bg-green-600 py-3 px-4 rounded-xl font-bold text-sm pixel-font text-white transition-colors"
@@ -665,7 +708,7 @@ export default function PerfectSlateGame() {
       {/* Confirm Modal */}
       {showConfirmModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-8 max-w-sm w-full">
+          <div className="bg-white rounded-2xl p-6 md:p-8 max-w-sm w-full">
             <div className="text-center">
               <Trophy className="w-16 h-16 mx-auto mb-4 text-yellow-500" />
               <h3 className="text-xl font-bold pixel-font mb-4">LOCK IT IN?</h3>
@@ -694,7 +737,7 @@ export default function PerfectSlateGame() {
       {/* Success Modal */}
       {showSuccessModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-8">
+          <div className="bg-white rounded-2xl p-6 md:p-8">
             <div className="text-center">
               <div className="mb-4 animate-bounce">
                 <Trophy className="w-16 h-16 mx-auto text-yellow-500" />
@@ -713,26 +756,6 @@ export default function PerfectSlateGame() {
           </div>
         </div>
       )}
-      
-      <style jsx>{`
-        @keyframes float {
-          0%, 100% { transform: translateY(0px); }
-          50% { transform: translateY(-20px); }
-        }
-        
-        @keyframes float-slow {
-          0%, 100% { transform: translateY(0px) translateX(0px); }
-          50% { transform: translateY(-30px) translateX(10px); }
-        }
-        
-        .animate-float {
-          animation: float 3s ease-in-out infinite;
-        }
-        
-        .animate-float-slow {
-          animation: float-slow 5s ease-in-out infinite;
-        }
-      `}</style>
     </div>
   )
 }
