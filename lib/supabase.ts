@@ -6,21 +6,25 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // Type definitions for our database
-export type Game = {
+export type Contest = {
   id: number
-  contest_id: number
   sport: 'NFL' | 'NCAAF'
-  home_team: string
-  away_team: string
-  home_team_short: string
-  away_team_short: string
-  scheduled_time: string
-  home_spread: number
-  away_spread: number
-  total_points: number
-  home_score?: number
-  away_score?: number
+  season_id?: number
+  week_number: number
+  open_time: string
+  lock_time: string
+  close_time: string
+  base_prize_pool: number
+  rollover_amount: number
+  sponsor_bonus: number
+  final_prize_pool: number
+  total_entries: number
+  total_winners: number
+  tokens_used_count: number
+  perfect_slates_count: number
   status: string
+  created_at?: string
+  updated_at?: string
 }
 
 export type Pick = {
