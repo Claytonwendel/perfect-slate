@@ -1,0 +1,141 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Pixel Font */
+.pixel-font {
+  font-family: 'Press Start 2P', monospace;
+}
+
+/* Pixel Button Styles */
+.pixel-button {
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  image-rendering: pixelated;
+}
+
+.pixel-card {
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+  image-rendering: pixelated;
+}
+
+/* Animations */
+@keyframes pixelGlow {
+  from { filter: brightness(1); }
+  to { filter: brightness(1.2); }
+}
+
+.pixel-glow {
+  animation: pixelGlow 1s ease-in-out infinite alternate;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+.floating-counter {
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes colorShift {
+  0% { color: #22C55E; }
+  50% { color: #EAB308; }
+  100% { color: #22C55E; }
+}
+
+.bounce-1 {
+  animation: bounce 1s infinite, colorShift 2s ease-in-out infinite;
+}
+
+.bounce-2 {
+  animation: bounce 1s infinite, colorShift 2s ease-in-out infinite;
+  animation-delay: 0.1s, 0s;
+}
+
+.bounce-3 {
+  animation: bounce 1s infinite, colorShift 2s ease-in-out infinite;
+  animation-delay: 0.2s, 0s;
+}
+
+/* Pixel Shadow */
+.pixel-shadow {
+  box-shadow: 8px 8px 0px rgba(0,0,0,0.3);
+}
+
+/* Background Field */
+.pixelated-field {
+  background: linear-gradient(to bottom, 
+    #90D5FF 0%, 
+    #90D5FF 15%, 
+    #22c55e 15%, 
+    #22c55e 85%, 
+    #d2691e 85%, 
+    #d2691e 100%
+  );
+  position: relative;
+}
+
+/* Text Styles */
+.text-outline {
+  text-shadow: 
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000;
+}
+
+/* Hover Effects */
+.card-hover {
+  transition: all 0.3s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 12px 12px 0px rgba(0,0,0,0.4);
+}
+
+.button-hover {
+  transition: all 0.2s ease;
+}
+
+.button-hover:hover:not(:disabled) {
+  transform: scale(1.05);
+  filter: brightness(1.1);
+}
+
+/* Shake Animation */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+.shake {
+  animation: shake 0.5s ease-in-out;
+}
+
+/* Pulse Glow */
+@keyframes pulse-glow {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.2) drop-shadow(0 0 8px currentColor); }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Coin Flip */
+@keyframes coin-flip {
+  0% { transform: rotateY(0deg); }
+  50% { transform: rotateY(90deg); }
+  100% { transform: rotateY(0deg); }
+}
+
+.coin-flip {
+  animation: coin-flip 0.6s ease-in-out;
+}
