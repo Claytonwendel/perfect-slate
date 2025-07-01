@@ -12,7 +12,7 @@ import { supabase } from '@/lib/supabase'
 type Game = {
   id: number
   contest_id: number
-  sport: 'NFL' | 'NCAAF'
+  sport: 'NFL' | 'NCAAF' | 'MLB'
   home_team: string
   away_team: string
   home_team_short: string
@@ -35,7 +35,7 @@ type Pick = {
 
 type Contest = {
   id: number
-  sport: 'NFL' | 'NCAAF'
+  sport: 'NFL' | 'NCAAF' | 'MLB'
   season_id?: number
   week_number: number
   open_time: string
@@ -118,7 +118,7 @@ const TokenIcon = ({ className }: { className?: string }) => (
 
 export default function PerfectSlateGame() {
   // State
-  const [selectedSport, setSelectedSport] = useState<'NFL' | 'NCAAF'>('NFL')
+  const [selectedSport, setSelectedSport] = useState<'NFL' | 'NCAAF' | 'MLB'>('MLB')
   const [showSportDropdown, setShowSportDropdown] = useState(false)
   const [showMobileMenu, setShowMobileMenu] = useState(false)
   const [games, setGames] = useState<Game[]>([])
@@ -394,7 +394,7 @@ export default function PerfectSlateGame() {
           
           {/* Total */}
           <div>
-            <div className="text-center text-xs font-bold text-gray-500 mb-2 pixel-font">TOTAL RUNS</div>
+            <div className="text-center text-xs font-bold text-gray-500 mb-2 pixel-font">{game.sport === 'MLB' ? 'TOTAL RUNS' : 'TOTAL POINTS'}</div>
             <div className="grid grid-cols-2 gap-2 md:gap-3">
               <PickButton
                 text={`Over ${game.total_points}`}
@@ -492,6 +492,15 @@ export default function PerfectSlateGame() {
               
               {showSportDropdown && (
                 <div className="absolute top-full left-0 mt-2 bg-white rounded-xl shadow-xl overflow-hidden z-50">
+                  <button
+                    onClick={() => {
+                      setSelectedSport('MLB')
+                      setShowSportDropdown(false)
+                    }}
+                    className="block w-full text-left px-6 py-3 pixel-font text-xs md:text-sm hover:bg-blue-50 transition-colors"
+                  >
+                    MLB
+                  </button>
                   <button
                     onClick={() => {
                       setSelectedSport('NFL')
