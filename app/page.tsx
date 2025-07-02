@@ -409,34 +409,9 @@ export default function PerfectSlateGame() {
         'border-gray-200'
       } hover:shadow-xl transition-all duration-300 relative`}>
         
-        {/* Game Status Badge - Moved to bottom for better spacing */}
-        {isAvailable && contestStatus === 'active' ? (
-          <div className="absolute bottom-2 right-2 flex items-center space-x-1 bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs pixel-font">
-            <Unlock className="w-3 h-3" />
-            <span>ACTIVE</span>
-          </div>
-        ) : !isAvailable ? (
-          <div className="absolute bottom-2 right-2 flex items-center space-x-1 bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs pixel-font">
-            <Lock className="w-3 h-3" />
-            <span>CLOSED</span>
-          </div>
-        ) : null}
-        
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4">
-          <div className="flex items-center space-x-2 text-gray-600">
-            <Clock className="w-4 h-4" />
-            <span className="text-xs sm:text-sm pixel-font">
-              {new Date(game.scheduled_time).toLocaleTimeString('en-US', { 
-                hour: 'numeric', 
-                minute: '2-digit',
-                timeZone: 'America/New_York'
-              })} ET
-            </span>
-          </div>
-          
-          {/* Token Button - Only show for available games */}
-          {isAvailable && contestStatus === 'active' && (
+        {/* Token Button in top right */}
+        {isAvailable && contestStatus === 'active' && (
+          <div className="absolute top-4 right-4">
             <button
               onClick={() => handleTokenToggle(game.id)}
               className={`flex items-center space-x-1 px-3 py-1 rounded-full text-xs sm:text-sm pixel-font transition-all ${
@@ -448,7 +423,36 @@ export default function PerfectSlateGame() {
               <TokenIcon className={`w-4 h-4 ${hasToken ? 'animate-pulse' : ''}`} />
               <span className="whitespace-nowrap">{hasToken ? 'TOKEN USED' : 'USE TOKEN'}</span>
             </button>
-          )}
+          </div>
+        )}
+        
+        {/* Time and Status */}
+        <div className="mb-4">
+          <div className="flex items-center space-x-2 text-gray-600 mb-1">
+            <Clock className="w-4 h-4" />
+            <span className="text-xs sm:text-sm pixel-font">
+              {new Date(game.scheduled_time).toLocaleTimeString('en-US', { 
+                hour: 'numeric', 
+                minute: '2-digit',
+                timeZone: 'America/New_York'
+              })} ET
+            </span>
+          </div>
+          
+          {/* Open/Closed Status */}
+          <div className="flex items-center space-x-1">
+            {isAvailable && contestStatus === 'active' ? (
+              <>
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                <span className="text-xs pixel-font text-green-600 font-bold">OPEN</span>
+              </>
+            ) : (
+              <>
+                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                <span className="text-xs pixel-font text-red-600 font-bold">CLOSED</span>
+              </>
+            )}
+          </div>
         </div>
         
         {/* Teams & Score */}
