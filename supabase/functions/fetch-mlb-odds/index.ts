@@ -81,7 +81,12 @@ serve(async (req) => {
     for (const game of oddsData) {
       // Skip if game already started
       const gameTime = new Date(game.commence_time);
-      if (gameTime < new Date()) {
+      const gameDate = gameTime.toISOString().split('T')[0];
+      const todayDate = new Date().toISOString().split('T')[0];
+      
+      // Include all games from today, even if started
+      if (gameDate < todayDate) {
+        console.log(`Skipping ${game.away_team} @ ${game.home_team} - game from previous day`);
         gamesSkipped++;
         continue;
       }
