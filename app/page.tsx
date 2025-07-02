@@ -789,7 +789,7 @@ export default function PerfectSlateGame() {
         <div className="fixed bottom-6 right-6 z-50">
           <button
             onClick={() => setShowSlateModal(true)}
-            className={`${totalPicks === 10 ? 'bg-green-400' : totalPicks > 0 ? 'bg-yellow-400' : 'bg-white'} rounded-full shadow-xl p-4 md:p-6 hover:scale-110 transition-all duration-300 ${totalPicks === 1 ? 'animate-bounce' : ''} ${totalPicks === 10 ? 'animate-pulse' : ''}`}
+            className={`${totalPicks > 0 ? 'bg-yellow-400' : 'bg-white'} rounded-full shadow-xl p-4 md:p-6 hover:scale-110 transition-all duration-300`}
           >
             <div className="text-center">
               <div className="text-2xl md:text-3xl font-bold pixel-font text-gray-800">
@@ -805,12 +805,6 @@ export default function PerfectSlateGame() {
               </div>
             )}
           </button>
-          
-          {totalPicks === 10 && (
-            <div className="absolute -top-16 right-0 bg-green-500 rounded-xl px-4 py-2 shadow-lg animate-pulse">
-              <span className="text-xs pixel-font text-white font-bold">READY TO SUBMIT!</span>
-            </div>
-          )}
         </div>
       )}
       
