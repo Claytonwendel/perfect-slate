@@ -21,6 +21,8 @@ type Game = {
   home_spread: number
   away_spread: number
   total_points: number
+  home_score?: number
+  away_score?: number
   status: string
 }
 
@@ -116,6 +118,25 @@ const TokenIcon = ({ className }: { className?: string }) => (
   </svg>
 )
 
+// Helper function to apply no-tie logic
+const applyNoTieLogic = (value: number, isUnder: boolean = false): number => {
+  // For spreads: add 0.5 to underdogs, subtract 0.5 from favorites
+  // For totals: add 0.5 to overs, subtract 0.5 from unders
+  if (isUnder) {
+    // For under bets, we subtract 0.5
+    return Math.floor(value) === value ? value - 0.5 : value
+  } else {
+    // For over bets and positive spreads (underdogs), we add 0.5
+    // For negative spreads (favorites), we subtract 0.5
+    if (value > 0) {
+      return Math.floor(value) === value ? value + 0.5 : value
+    } else if (value < 0) {
+      return Math.floor(value) === value ? value - 0.5 : value
+    }
+    return value
+  }
+}
+
 export default function PerfectSlateGame() {
   // State
   const [selectedSport, setSelectedSport] = useState<'NFL' | 'NCAAF' | 'MLB'>('MLB')
@@ -149,6 +170,16 @@ export default function PerfectSlateGame() {
     }, 1000)
     return () => clearInterval(timer)
   }, [currentContest])
+
+  // Refresh scores for live games
+  useEffect(() => {
+    const scoreInterval = setInterval(() => {
+      if (games.some(g => g.status === 'in_progress')) {
+        loadContestData()
+      }
+    }, 30000) // Refresh every 30 seconds
+    return () => clearInterval(scoreInterval)
+  }, [games])
 
   const checkUser = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -185,7 +216,7 @@ export default function PerfectSlateGame() {
         .from('games')
         .select('*')
         .eq('contest_id', contestData.id)
-        .order('scheduled_time')
+        .order('scheduled_time', { ascending: true }) // Sort by earliest first!
       
       if (gamesData) {
         setGames(gamesData)
@@ -322,10 +353,17 @@ export default function PerfectSlateGame() {
     
     const hasToken = gamesWithTokens.has(game.id)
     const isGameDisabled = hasToken || isSubmitted
+    const isGameStarted = game.status === 'in_progress' || game.status === 'final'
     
     // Get city names
     const homeCity = getCityName(game.home_team)
     const awayCity = getCityName(game.away_team)
+    
+    // Apply no-tie logic to spreads and totals
+    const homeSpreadDisplay = applyNoTieLogic(game.home_spread)
+    const awaySpreadDisplay = applyNoTieLogic(game.away_spread)
+    const overDisplay = applyNoTieLogic(game.total_points)
+    const underDisplay = applyNoTieLogic(game.total_points, true)
     
     return (
       <div className={`bg-white rounded-2xl p-4 md:p-6 shadow-lg border-4 ${hasToken ? 'border-yellow-400 bg-yellow-50' : 'border-gray-200'} hover:shadow-xl transition-all duration-300`}>
@@ -356,67 +394,94 @@ export default function PerfectSlateGame() {
           </button>
         </div>
         
-        {/* Teams */}
+        {/* Teams & Score */}
         <div className="text-center mb-4 md:mb-6">
           <div className="text-base sm:text-lg md:text-xl font-bold pixel-font">
             <span className="text-gray-700">{awayCity}</span>
             <span className="text-gray-500 mx-2">@</span>
             <span className="text-gray-700">{homeCity}</span>
           </div>
+          
+          {/* Live Score Display */}
+          {isGameStarted && (
+            <div className="mt-2 text-2xl font-bold pixel-font">
+              <span className={game.away_score! > game.home_score! ? 'text-green-600' : 'text-gray-700'}>
+                {game.away_score || 0}
+              </span>
+              <span className="text-gray-500 mx-3">-</span>
+              <span className={game.home_score! > game.away_score! ? 'text-green-600' : 'text-gray-700'}>
+                {game.home_score || 0}
+              </span>
+            </div>
+          )}
+          
+          {game.status === 'in_progress' && (
+            <div className="mt-1">
+              <span className="text-xs pixel-font text-red-600 animate-pulse">LIVE</span>
+            </div>
+          )}
+          
+          {game.status === 'final' && (
+            <div className="mt-1">
+              <span className="text-xs pixel-font text-gray-600">FINAL</span>
+            </div>
+          )}
         </div>
         
-        {/* Picks Grid */}
-        <div className="space-y-3 md:space-y-4">
-          {/* Spread */}
-          <div>
-            <div className="text-center text-xs font-bold text-gray-500 mb-2 pixel-font">SPREAD</div>
-            <div className="grid grid-cols-2 gap-2 md:gap-3">
-              <PickButton
-                text={`${awayCity} ${game.away_spread > 0 ? '+' : ''}${game.away_spread}`}
-                isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.selection === 'away')}
-                onClick={() => handlePickSelect(game.id, 'spread', 'away', 
-                  `${awayCity} ${game.away_spread > 0 ? '+' : ''}${game.away_spread}`, 
-                  awaySpread!.id
-                )}
-                disabled={isGameDisabled}
-              />
-              <PickButton
-                text={`${homeCity} ${game.home_spread > 0 ? '+' : ''}${game.home_spread}`}
-                isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.selection === 'home')}
-                onClick={() => handlePickSelect(game.id, 'spread', 'home',
-                  `${homeCity} ${game.home_spread > 0 ? '+' : ''}${game.home_spread}`,
-                  homeSpread!.id
-                )}
-                disabled={isGameDisabled}
-              />
+        {/* Picks Grid - Show odds if game hasn't started */}
+        {!isGameStarted && (
+          <div className="space-y-3 md:space-y-4">
+            {/* Spread */}
+            <div>
+              <div className="text-center text-xs font-bold text-gray-500 mb-2 pixel-font">SPREAD</div>
+              <div className="grid grid-cols-2 gap-2 md:gap-3">
+                <PickButton
+                  text={`${awayCity} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`}
+                  isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.selection === 'away')}
+                  onClick={() => handlePickSelect(game.id, 'spread', 'away', 
+                    `${awayCity} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`, 
+                    awaySpread!.id
+                  )}
+                  disabled={isGameDisabled}
+                />
+                <PickButton
+                  text={`${homeCity} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`}
+                  isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.selection === 'home')}
+                  onClick={() => handlePickSelect(game.id, 'spread', 'home',
+                    `${homeCity} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`,
+                    homeSpread!.id
+                  )}
+                  disabled={isGameDisabled}
+                />
+              </div>
+            </div>
+            
+            {/* Total */}
+            <div>
+              <div className="text-center text-xs font-bold text-gray-500 mb-2 pixel-font">{game.sport === 'MLB' ? 'TOTAL RUNS' : 'TOTAL POINTS'}</div>
+              <div className="grid grid-cols-2 gap-2 md:gap-3">
+                <PickButton
+                  text={`Over ${overDisplay}`}
+                  isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'total' && p.selection === 'over')}
+                  onClick={() => handlePickSelect(game.id, 'total', 'over',
+                    `Over ${overDisplay}`,
+                    overTotal!.id
+                  )}
+                  disabled={isGameDisabled}
+                />
+                <PickButton
+                  text={`Under ${underDisplay}`}
+                  isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'total' && p.selection === 'under')}
+                  onClick={() => handlePickSelect(game.id, 'total', 'under',
+                    `Under ${underDisplay}`,
+                    underTotal!.id
+                  )}
+                  disabled={isGameDisabled}
+                />
+              </div>
             </div>
           </div>
-          
-          {/* Total */}
-          <div>
-            <div className="text-center text-xs font-bold text-gray-500 mb-2 pixel-font">{game.sport === 'MLB' ? 'TOTAL RUNS' : 'TOTAL POINTS'}</div>
-            <div className="grid grid-cols-2 gap-2 md:gap-3">
-              <PickButton
-                text={`Over ${game.total_points}`}
-                isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'total' && p.selection === 'over')}
-                onClick={() => handlePickSelect(game.id, 'total', 'over',
-                  `Over ${game.total_points}`,
-                  overTotal!.id
-                )}
-                disabled={isGameDisabled}
-              />
-              <PickButton
-                text={`Under ${game.total_points}`}
-                isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'total' && p.selection === 'under')}
-                onClick={() => handlePickSelect(game.id, 'total', 'under',
-                  `Under ${game.total_points}`,
-                  underTotal!.id
-                )}
-                disabled={isGameDisabled}
-              />
-            </div>
-          </div>
-        </div>
+        )}
         
         {/* Token Indicator */}
         {hasToken && (
