@@ -160,6 +160,9 @@ export default function PerfectSlateGame() {
   const [user, setUser] = useState<any>(null)
   const [tokenBalance, setTokenBalance] = useState(0)
 
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signup')
+
   // Fetch initial data
   useEffect(() => {
     loadContestData()
@@ -291,6 +294,12 @@ export default function PerfectSlateGame() {
   }
 
   const handlePickSelect = (gameId: number, pickType: 'spread' | 'total', selection: string, displayText: string, pickId: number) => {
+    // Check if user is logged in first
+    if (!user) {
+      setShowAuthModal(true)
+      return
+    }
+    
     if (isSubmitted || gamesWithTokens.has(gameId) || contestStatus !== 'active') return
     
     const existingPickIndex = selectedPicks.findIndex(
@@ -942,6 +951,63 @@ export default function PerfectSlateGame() {
               >
                 LET&apos;S GO!
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Auth Modal */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border-4 border-gray-800 relative overflow-hidden">
+            {/* Sporty pixel background pattern */}
+            <div className="absolute inset-0 opacity-5">
+              <div className="absolute top-0 left-0 w-32 h-32 bg-green-500 rounded-full -translate-x-16 -translate-y-16"></div>
+              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500 rounded-full translate-x-16 -translate-y-16"></div>
+              <div className="absolute bottom-0 left-0 w-32 h-32 bg-yellow-500 rounded-full -translate-x-16 translate-y-16"></div>
+              <div className="absolute bottom-0 right-0 w-32 h-32 bg-red-500 rounded-full translate-x-16 translate-y-16"></div>
+            </div>
+            
+            {/* Close button */}
+            <button
+              onClick={() => setShowAuthModal(false)}
+              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 z-10"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            
+            {/* Header with sports theme */}
+            <div className="relative bg-gradient-to-b from-green-500 to-green-600 p-8 text-center">
+              <div className="absolute inset-0 bg-black opacity-20"></div>
+              <div className="relative z-10">
+                <div className="flex justify-center mb-4">
+                  <div className="bg-white rounded-full p-3 shadow-lg">
+                    <Trophy className="w-12 h-12 text-yellow-500" />
+                  </div>
+                </div>
+                <h2 className="text-2xl font-bold text-white pixel-font mb-2">
+                  SIGN UP BEFORE YOU PLAY!
+                </h2>
+                <p className="text-yellow-300 text-sm pixel-font mb-1">
+                  Take your shot at our prize money for FREE
+                </p>
+                <p className="text-white text-xs pixel-font opacity-90">
+                  💰 Real cash earnings 💰
+                </p>
+              </div>
+            </div>
+            
+            {/* Auth Form */}
+            <div className="p-6">
+              <AuthForm 
+                mode={authMode} 
+                onModeChange={setAuthMode}
+                onSuccess={() => {
+                  setShowAuthModal(false)
+                  checkUser()
+                  loadContestData()
+                }}
+              />
             </div>
           </div>
         </div>
