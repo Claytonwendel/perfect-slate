@@ -409,8 +409,8 @@ export default function PerfectSlateGame() {
         'border-gray-200'
       } hover:shadow-xl transition-all duration-300 relative`}>
         
-        {/* Game Status Badge */}
-        <div className="absolute top-2 right-2">
+        {/* Game Status Badge - Moved to avoid overlap */}
+        <div className="absolute top-2 left-2 md:left-auto md:right-2">
           {isAvailable && contestStatus === 'active' ? (
             <div className="flex items-center space-x-1 bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs pixel-font">
               <Unlock className="w-3 h-3" />
@@ -495,19 +495,19 @@ export default function PerfectSlateGame() {
               <div className="text-center text-xs font-bold text-gray-500 mb-2 pixel-font">SPREAD</div>
               <div className="grid grid-cols-2 gap-2 md:gap-3">
                 <PickButton
-                  text={`${awayCity} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`}
+                  text={`${game.away_team_short || awayCity} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`}
                   isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.selection === 'away')}
                   onClick={() => handlePickSelect(game.id, 'spread', 'away', 
-                    `${awayCity} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`, 
+                    `${game.away_team_short || awayCity} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`, 
                     awaySpread!.id
                   )}
                   disabled={isGameDisabled}
                 />
                 <PickButton
-                  text={`${homeCity} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`}
+                  text={`${game.home_team_short || homeCity} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`}
                   isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.selection === 'home')}
                   onClick={() => handlePickSelect(game.id, 'spread', 'home',
-                    `${homeCity} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`,
+                    `${game.home_team_short || homeCity} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`,
                     homeSpread!.id
                   )}
                   disabled={isGameDisabled}
@@ -789,7 +789,7 @@ export default function PerfectSlateGame() {
         <div className="fixed bottom-6 right-6 z-50">
           <button
             onClick={() => setShowSlateModal(true)}
-            className={`${totalPicks > 0 ? 'bg-yellow-400' : 'bg-white'} rounded-full shadow-xl p-4 md:p-6 hover:scale-110 transition-all duration-300`}
+            className={`${totalPicks === 10 ? 'bg-green-400' : totalPicks > 0 ? 'bg-yellow-400' : 'bg-white'} rounded-full shadow-xl p-4 md:p-6 hover:scale-110 transition-all duration-300 ${totalPicks === 1 ? 'animate-bounce' : ''} ${totalPicks === 10 ? 'animate-pulse' : ''}`}
           >
             <div className="text-center">
               <div className="text-2xl md:text-3xl font-bold pixel-font text-gray-800">
@@ -805,6 +805,12 @@ export default function PerfectSlateGame() {
               </div>
             )}
           </button>
+          
+          {totalPicks === 10 && (
+            <div className="absolute -top-16 right-0 bg-green-500 rounded-xl px-4 py-2 shadow-lg animate-pulse">
+              <span className="text-xs pixel-font text-white font-bold">READY TO SUBMIT!</span>
+            </div>
+          )}
         </div>
       )}
       
