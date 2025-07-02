@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react'
 import { 
   Users, DollarSign, Trophy, Clock, X, Trash2,
   ChevronDown, AlertCircle, FileText, BarChart3, 
-  User, Coins, Zap, Menu, CircleDollarSign
+  User, Coins, Zap, Menu, CircleDollarSign, Calendar,
+  Lock, Unlock, CheckCircle, XCircle
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -154,6 +155,7 @@ export default function PerfectSlateGame() {
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [showPrizeHistory, setShowPrizeHistory] = useState(false)
   const [timeRemaining, setTimeRemaining] = useState('')
+  const [contestStatus, setContestStatus] = useState<'pre-contest' | 'active' | 'locked'>('active')
   const [user, setUser] = useState<any>(null)
   const [tokenBalance, setTokenBalance] = useState(0)
 
@@ -169,7 +171,7 @@ export default function PerfectSlateGame() {
       updateTimeRemaining()
     }, 1000)
     return () => clearInterval(timer)
-  }, [currentContest])
+  }, [currentContest, games])
 
   // Refresh scores for live games
   useEffect(() => {
@@ -237,24 +239,58 @@ export default function PerfectSlateGame() {
   }
 
   const updateTimeRemaining = () => {
-    if (!currentContest || !currentContest.lock_time) return
+    if (!currentContest) return
     
     const now = new Date()
-    const lockTime = new Date(currentContest.lock_time)
-    const diff = lockTime.getTime() - now.getTime()
+    const openTime = new Date(currentContest.open_time)
     
-    if (diff <= 0) {
+    // Check if contest hasn't opened yet (before 7 AM ET)
+    if (now < openTime) {
+      setContestStatus('pre-contest')
+      const diff = openTime.getTime() - now.getTime()
+      const hours = Math.floor(diff / (1000 * 60 * 60))
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+      setTimeRemaining(`${hours}h ${minutes}m`)
+      return
+    }
+    
+    // Calculate when contest should lock (when only 4 games remain)
+    const upcomingGames = games.filter(g => 
+      g.status === 'scheduled' && new Date(g.scheduled_time) > now
+    )
+    
+    if (upcomingGames.length <= 4) {
+      setContestStatus('locked')
       setTimeRemaining('LOCKED')
       return
     }
     
-    const hours = Math.floor(diff / (1000 * 60 * 60))
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-    setTimeRemaining(`${hours}h ${minutes}m`)
+    // Contest is active - show time until it locks (5th to last game starts)
+    if (upcomingGames.length >= 5) {
+      setContestStatus('active')
+      const fifthToLastGame = upcomingGames[upcomingGames.length - 5]
+      const lockTime = new Date(fifthToLastGame.scheduled_time)
+      const diff = lockTime.getTime() - now.getTime()
+      
+      if (diff <= 0) {
+        setContestStatus('locked')
+        setTimeRemaining('LOCKED')
+      } else {
+        const hours = Math.floor(diff / (1000 * 60 * 60))
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+        setTimeRemaining(`${hours}h ${minutes}m`)
+      }
+    }
+  }
+
+  const isGameAvailable = (game: Game): boolean => {
+    const now = new Date()
+    const gameTime = new Date(game.scheduled_time)
+    return game.status === 'scheduled' && gameTime > now
   }
 
   const handlePickSelect = (gameId: number, pickType: 'spread' | 'total', selection: string, displayText: string, pickId: number) => {
-    if (isSubmitted || gamesWithTokens.has(gameId)) return
+    if (isSubmitted || gamesWithTokens.has(gameId) || contestStatus !== 'active') return
     
     const existingPickIndex = selectedPicks.findIndex(
       p => p.gameId === gameId && p.pickType === pickType
@@ -280,7 +316,7 @@ export default function PerfectSlateGame() {
   }
 
   const handleTokenToggle = (gameId: number) => {
-    if (isSubmitted) return
+    if (isSubmitted || contestStatus !== 'active') return
     
     const newTokenGames = new Set(gamesWithTokens)
     
@@ -352,7 +388,8 @@ export default function PerfectSlateGame() {
     const underTotal = totals.find(p => p.selection === 'under')
     
     const hasToken = gamesWithTokens.has(game.id)
-    const isGameDisabled = hasToken || isSubmitted
+    const isAvailable = isGameAvailable(game)
+    const isGameDisabled = hasToken || isSubmitted || !isAvailable || contestStatus !== 'active'
     const isGameStarted = game.status === 'in_progress' || game.status === 'final'
     
     // Get city names
@@ -366,7 +403,27 @@ export default function PerfectSlateGame() {
     const underDisplay = applyNoTieLogic(game.total_points, true)
     
     return (
-      <div className={`bg-white rounded-2xl p-4 md:p-6 shadow-lg border-4 ${hasToken ? 'border-yellow-400 bg-yellow-50' : 'border-gray-200'} hover:shadow-xl transition-all duration-300`}>
+      <div className={`bg-white rounded-2xl p-4 md:p-6 shadow-lg border-4 ${
+        hasToken ? 'border-yellow-400 bg-yellow-50' : 
+        !isAvailable ? 'border-gray-400 bg-gray-50 opacity-75' : 
+        'border-gray-200'
+      } hover:shadow-xl transition-all duration-300 relative`}>
+        
+        {/* Game Status Badge */}
+        <div className="absolute top-2 right-2">
+          {isAvailable && contestStatus === 'active' ? (
+            <div className="flex items-center space-x-1 bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs pixel-font">
+              <Unlock className="w-3 h-3" />
+              <span>ACTIVE</span>
+            </div>
+          ) : !isAvailable ? (
+            <div className="flex items-center space-x-1 bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs pixel-font">
+              <Lock className="w-3 h-3" />
+              <span>CLOSED</span>
+            </div>
+          ) : null}
+        </div>
+        
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4">
           <div className="flex items-center space-x-2 text-gray-600">
@@ -380,18 +437,20 @@ export default function PerfectSlateGame() {
             </span>
           </div>
           
-          {/* Token Button */}
-          <button
-            onClick={() => handleTokenToggle(game.id)}
-            className={`flex items-center space-x-1 px-3 py-1 rounded-full text-xs sm:text-sm pixel-font transition-all ${
-              hasToken 
-                ? 'bg-yellow-400 text-yellow-900 shadow-md' 
-                : 'bg-gray-100 hover:bg-yellow-100 text-gray-700'
-            }`}
-          >
-            <TokenIcon className={`w-4 h-4 ${hasToken ? 'animate-pulse' : ''}`} />
-            <span className="whitespace-nowrap">{hasToken ? 'TOKEN USED' : 'USE TOKEN'}</span>
-          </button>
+          {/* Token Button - Only show for available games */}
+          {isAvailable && contestStatus === 'active' && (
+            <button
+              onClick={() => handleTokenToggle(game.id)}
+              className={`flex items-center space-x-1 px-3 py-1 rounded-full text-xs sm:text-sm pixel-font transition-all ${
+                hasToken 
+                  ? 'bg-yellow-400 text-yellow-900 shadow-md' 
+                  : 'bg-gray-100 hover:bg-yellow-100 text-gray-700'
+              }`}
+            >
+              <TokenIcon className={`w-4 h-4 ${hasToken ? 'animate-pulse' : ''}`} />
+              <span className="whitespace-nowrap">{hasToken ? 'TOKEN USED' : 'USE TOKEN'}</span>
+            </button>
+          )}
         </div>
         
         {/* Teams & Score */}
@@ -428,8 +487,8 @@ export default function PerfectSlateGame() {
           )}
         </div>
         
-        {/* Picks Grid - Show odds if game hasn't started */}
-        {!isGameStarted && (
+        {/* Picks Grid - Show odds if game hasn't started and is available */}
+        {!isGameStarted && isAvailable && (
           <div className="space-y-3 md:space-y-4">
             {/* Spread */}
             <div>
@@ -483,6 +542,15 @@ export default function PerfectSlateGame() {
           </div>
         )}
         
+        {/* Game Unavailable Message */}
+        {!isAvailable && !isGameStarted && (
+          <div className="text-center py-4">
+            <span className="text-sm pixel-font text-gray-500">
+              GAME LOCKED
+            </span>
+          </div>
+        )}
+        
         {/* Token Indicator */}
         {hasToken && (
           <div className="mt-4 text-center">
@@ -532,14 +600,20 @@ export default function PerfectSlateGame() {
   }
 
   const totalPicks = selectedPicks.length + gamesWithTokens.size
+  const today = new Date().toLocaleDateString('en-US', { 
+    weekday: 'long', 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  })
 
   return (
     <div className="min-h-screen relative">
       {/* Sky Blue Top Section */}
-      <div className="bg-sky-400 absolute top-0 left-0 right-0 h-[450px]"></div>
+      <div className="bg-sky-400 absolute top-0 left-0 right-0 h-[550px]"></div>
       
       {/* Green Field Bottom Section */}
-      <div className="bg-green-500 absolute top-[450px] left-0 right-0 bottom-0"></div>
+      <div className="bg-green-500 absolute top-[550px] left-0 right-0 bottom-0"></div>
       
       {/* Navigation */}
       <nav className="relative z-20">
@@ -631,7 +705,7 @@ export default function PerfectSlateGame() {
       </nav>
       
       {/* Header Content - Sky Blue Background */}
-      <div className="relative z-10 pb-20">
+      <div className="relative z-10 pb-16">
         <div className="text-center pt-8">
           {/* Prize Pool */}
           <button
@@ -650,7 +724,7 @@ export default function PerfectSlateGame() {
           </button>
           
           {/* Stats */}
-          <div className="flex justify-center items-center space-x-6 md:space-x-8 text-white">
+          <div className="flex justify-center items-center space-x-6 md:space-x-8 text-white mb-8">
             <div>
               <div className="flex items-center justify-center space-x-2 mb-1">
                 <Users className="w-4 h-4 md:w-5 md:h-5" />
@@ -668,7 +742,34 @@ export default function PerfectSlateGame() {
                   {timeRemaining}
                 </span>
               </div>
-              <div className="text-xs pixel-font opacity-90">TIME LEFT</div>
+              <div className="text-xs pixel-font opacity-90">
+                {contestStatus === 'pre-contest' ? 'OPENS IN' : 
+                 contestStatus === 'active' ? 'CLOSES IN' : 
+                 'CONTEST LOCKED'}
+              </div>
+            </div>
+          </div>
+          
+          {/* Today's Challenge */}
+          <div className="max-w-4xl mx-auto px-4">
+            <div className="bg-white/90 backdrop-blur rounded-2xl p-4 md:p-6 shadow-xl border-4 border-yellow-400">
+              <h2 className="text-xl md:text-2xl font-bold pixel-font text-gray-800 mb-2">
+                SELECT YOUR PERFECT 10
+              </h2>
+              <div className="flex items-center justify-center space-x-2 text-gray-600">
+                <Calendar className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="text-sm md:text-base pixel-font">{today}</span>
+              </div>
+              {contestStatus === 'pre-contest' && (
+                <div className="mt-3 text-sm pixel-font text-orange-600">
+                  Contest opens at 7:00 AM ET
+                </div>
+              )}
+              {contestStatus === 'locked' && (
+                <div className="mt-3 text-sm pixel-font text-red-600">
+                  Contest is locked - games in progress
+                </div>
+              )}
             </div>
           </div>
         </div>
