@@ -48,9 +48,8 @@ serve(async (req) => {
 
     // Fetch scores from The Odds API
     const sport = 'baseball_mlb'
-    const regions = 'us' // US bookmakers
     const daysFrom = 1 // Look back 1 day for recent games
-    const scoresUrl = `https://api.the-odds-api.com/v4/sports/${sport}/scores/?apiKey=${oddsApiKey}&regions=${regions}&daysFrom=${daysFrom}`
+    const scoresUrl = `https://api.the-odds-api.com/v4/sports/${sport}/scores/?apiKey=${oddsApiKey}&daysFrom=${daysFrom}`
     
     console.log('Fetching scores from Odds API...')
     const scoresResponse = await fetch(scoresUrl)
