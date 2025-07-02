@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { 
   Mail, Lock, User, Trophy, Zap, AlertCircle, 
-  CheckCircle, Loader, ArrowRight, Star
+  CheckCircle, Loader, ArrowRight, Star, Users
 } from 'lucide-react'
 
 interface AuthFormProps {
