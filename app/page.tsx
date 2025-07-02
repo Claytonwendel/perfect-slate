@@ -8,6 +8,7 @@ import {
   Lock, Unlock, CheckCircle, XCircle
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import AuthForm from '@/components/AuthForm'
 
 // Type definitions
 type Game = {
