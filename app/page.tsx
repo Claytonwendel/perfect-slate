@@ -171,19 +171,41 @@ export default function PerfectSlateGame() {
     
     // Check for email verification redirect
     const checkEmailVerification = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      const urlParams = new URLSearchParams(window.location.search)
-      const isNewUser = urlParams.get('type') === 'signup'
+      // Look for Supabase auth hash parameters
+      const hashParams = new URLSearchParams(window.location.hash.substring(1))
+      const accessToken = hashParams.get('access_token')
+      const type = hashParams.get('type')
       
-      if (session && isNewUser) {
+      if (accessToken && type === 'signup') {
         // User just verified their email
-        setShowVerificationSuccess(true)
-        // Clean up URL
-        window.history.replaceState({}, document.title, window.location.pathname)
+        console.log('Email verification detected!')
+        
+        // Get the session to ensure user is logged in
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (session) {
+          // Show success modal
+          setShowVerificationSuccess(true)
+          // Clean up URL
+          window.history.replaceState({}, document.title, window.location.pathname)
+          // Reload user data
+          checkUser()
+        }
       }
     }
     
     checkEmailVerification()
+    
+    // Listen for auth state changes
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        checkUser()
+      }
+    })
+    
+    return () => {
+      authListener.subscription.unsubscribe()
+    }
   }, [selectedSport])
 
   // Timer effect
@@ -208,13 +230,33 @@ export default function PerfectSlateGame() {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
       setUser(user)
-      const { data: userData } = await supabase
+      
+      // Check if user profile exists
+      const { data: userData, error } = await supabase
         .from('users')
         .select('token_balance')
         .eq('id', user.id)
         .single()
       
-      if (userData) {
+      if (error && error.code === 'PGRST116') {
+        // Profile doesn't exist, create it
+        console.log('Creating user profile...')
+        const { error: createError } = await supabase
+          .rpc('create_profile_for_user', { user_id: user.id })
+        
+        if (!createError) {
+          // Try again to get the token balance
+          const { data: newUserData } = await supabase
+            .from('users')
+            .select('token_balance')
+            .eq('id', user.id)
+            .single()
+          
+          if (newUserData) {
+            setTokenBalance(newUserData.token_balance)
+          }
+        }
+      } else if (userData) {
         setTokenBalance(userData.token_balance)
       }
     }
