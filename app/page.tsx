@@ -8,7 +8,6 @@ import {
   Lock, Unlock, CheckCircle, XCircle
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import AuthForm from '@/components/AuthForm'
 
 // Type definitions
 type Game = {
@@ -210,7 +209,7 @@ export default function PerfectSlateGame() {
       .from('contests')
       .select('*')
       .eq('sport', selectedSport)
-      .eq('status', 'open')
+      .in('status', ['open', 'locked', 'in_progress']) // Include locked contests
       .order('week_number', { ascending: false })
       .limit(1)
       .single()
@@ -402,9 +401,22 @@ export default function PerfectSlateGame() {
     const isGameDisabled = hasToken || isSubmitted || !isAvailable || contestStatus !== 'active'
     const isGameStarted = game.status === 'in_progress' || game.status === 'final'
     
+    // Calculate pick percentages
+    const totalSpreadPicks = (homeSpread?.times_selected || 0) + (awaySpread?.times_selected || 0)
+    const totalTotalPicks = (overTotal?.times_selected || 0) + (underTotal?.times_selected || 0)
+    
     // Get city names
     const homeCity = getCityName(game.home_team)
     const awayCity = getCityName(game.away_team)
+    
+    // Calculate pick percentages
+    const totalSpreadPicks = (homeSpread?.times_selected || 0) + (awaySpread?.times_selected || 0)
+    const totalTotalPicks = (overTotal?.times_selected || 0) + (underTotal?.times_selected || 0)
+    
+    const homeSpreadPct = totalSpreadPicks > 0 ? Math.round((homeSpread?.times_selected || 0) / totalSpreadPicks * 100) : 50
+    const awaySpreadPct = totalSpreadPicks > 0 ? Math.round((awaySpread?.times_selected || 0) / totalSpreadPicks * 100) : 50
+    const overPct = totalTotalPicks > 0 ? Math.round((overTotal?.times_selected || 0) / totalTotalPicks * 100) : 50
+    const underPct = totalTotalPicks > 0 ? Math.round((underTotal?.times_selected || 0) / totalTotalPicks * 100) : 50
     
     // Apply no-tie logic to spreads and totals
     const homeSpreadDisplay = applyNoTieLogic(game.home_spread)
@@ -514,6 +526,7 @@ export default function PerfectSlateGame() {
                     awaySpread!.id
                   )}
                   disabled={isGameDisabled}
+                  percentage={awaySpreadPct}
                 />
                 <PickButton
                   text={`${game.home_team_short || homeCity} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`}
@@ -523,6 +536,7 @@ export default function PerfectSlateGame() {
                     homeSpread!.id
                   )}
                   disabled={isGameDisabled}
+                  percentage={homeSpreadPct}
                 />
               </div>
             </div>
@@ -539,6 +553,7 @@ export default function PerfectSlateGame() {
                     overTotal!.id
                   )}
                   disabled={isGameDisabled}
+                  percentage={overPct}
                 />
                 <PickButton
                   text={`Under ${underDisplay}`}
@@ -548,6 +563,7 @@ export default function PerfectSlateGame() {
                     underTotal!.id
                   )}
                   disabled={isGameDisabled}
+                  percentage={underPct}
                 />
               </div>
             </div>
@@ -575,7 +591,7 @@ export default function PerfectSlateGame() {
     )
   }
 
-  const PickButton = ({ text, isSelected, onClick, disabled }: any) => {
+  const PickButton = ({ text, isSelected, onClick, disabled, percentage }: any) => {
     return (
       <button
         onClick={onClick}
@@ -590,9 +606,21 @@ export default function PerfectSlateGame() {
           }
         `}
       >
+        {/* Percentage Background */}
+        {percentage && (
+          <div 
+            className="absolute left-0 top-0 bottom-0 bg-black opacity-10"
+            style={{ width: `${percentage}%` }}
+          />
+        )}
+        
+        {/* Content */}
         <span className="relative z-10 flex items-center justify-center space-x-1">
           {isSelected && <Zap className="w-3 h-3 md:w-4 md:h-4" />}
           <span className="truncate">{text}</span>
+          {percentage && (
+            <span className="text-xs opacity-75 ml-1">({percentage}%)</span>
+          )}
         </span>
       </button>
     )
@@ -684,10 +712,23 @@ export default function PerfectSlateGame() {
                 <BarChart3 className="w-4 h-4" />
                 <span>LEADERBOARDS</span>
               </button>
-              <button className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center space-x-2">
-                <User className="w-4 h-4" />
-                <span>PROFILE</span>
-              </button>
+              {user ? (
+                <button className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center space-x-2">
+                  <User className="w-4 h-4" />
+                  <span>PROFILE</span>
+                </button>
+              ) : (
+                <button 
+                  onClick={() => {
+                    setAuthMode('signup')
+                    setShowAuthModal(true)
+                  }}
+                  className="bg-yellow-400 text-yellow-900 pixel-font text-sm hover:bg-yellow-300 transition-colors flex items-center space-x-2 px-4 py-2 rounded-lg font-bold"
+                >
+                  <Zap className="w-4 h-4" />
+                  <span>SIGN UP</span>
+                </button>
+              )}
             </div>
             
             {/* Mobile Menu Button */}
@@ -708,9 +749,22 @@ export default function PerfectSlateGame() {
               <button className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">
                 LEADERBOARDS
               </button>
-              <button className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">
-                PROFILE
-              </button>
+              {user ? (
+                <button className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">
+                  PROFILE
+                </button>
+              ) : (
+                <button 
+                  onClick={() => {
+                    setAuthMode('signup')
+                    setShowAuthModal(true)
+                    setShowMobileMenu(false)
+                  }}
+                  className="block w-full text-left text-yellow-300 pixel-font text-sm py-2 hover:text-yellow-400 transition-colors font-bold"
+                >
+                  SIGN UP TO PLAY
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -959,46 +1013,33 @@ export default function PerfectSlateGame() {
       {/* Auth Modal */}
       {showAuthModal && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border-4 border-gray-800 relative overflow-hidden">
-            {/* Sporty pixel background pattern */}
-            <div className="absolute inset-0 opacity-5">
-              <div className="absolute top-0 left-0 w-32 h-32 bg-green-500 rounded-full -translate-x-16 -translate-y-16"></div>
-              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500 rounded-full translate-x-16 -translate-y-16"></div>
-              <div className="absolute bottom-0 left-0 w-32 h-32 bg-yellow-500 rounded-full -translate-x-16 translate-y-16"></div>
-              <div className="absolute bottom-0 right-0 w-32 h-32 bg-red-500 rounded-full translate-x-16 translate-y-16"></div>
-            </div>
-            
+          <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl border-4 border-gray-800 relative overflow-hidden max-h-[90vh] overflow-y-auto">
             {/* Close button */}
             <button
               onClick={() => setShowAuthModal(false)}
-              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 z-10"
+              className="absolute top-3 right-3 text-gray-500 hover:text-gray-700 z-10"
             >
-              <X className="w-6 h-6" />
+              <X className="w-5 h-5" />
             </button>
             
-            {/* Header with sports theme */}
-            <div className="relative bg-gradient-to-b from-green-500 to-green-600 p-8 text-center">
-              <div className="absolute inset-0 bg-black opacity-20"></div>
-              <div className="relative z-10">
-                <div className="flex justify-center mb-4">
-                  <div className="bg-white rounded-full p-3 shadow-lg">
-                    <Trophy className="w-12 h-12 text-yellow-500" />
-                  </div>
-                </div>
-                <h2 className="text-2xl font-bold text-white pixel-font mb-2">
-                  SIGN UP BEFORE YOU PLAY!
-                </h2>
-                <p className="text-yellow-300 text-sm pixel-font mb-1">
-                  Take your shot at our prize money for FREE
-                </p>
-                <p className="text-white text-xs pixel-font opacity-90">
-                  💰 Real cash earnings 💰
-                </p>
+            {/* Compact Header */}
+            <div className="relative bg-gradient-to-b from-green-500 to-green-600 p-6 text-center">
+              <div className="flex justify-center mb-3">
+                <Zap className="w-10 h-10 text-yellow-300" />
               </div>
+              <h2 className="text-xl font-bold text-white pixel-font mb-2">
+                SIGN UP TO PLAY
+              </h2>
+              <p className="text-yellow-300 text-xs pixel-font mb-1">
+                Win real cash prizes daily
+              </p>
+              <p className="text-white text-xs pixel-font opacity-90">
+                100% FREE to play
+              </p>
             </div>
             
             {/* Auth Form */}
-            <div className="p-6">
+            <div className="p-4">
               <AuthForm 
                 mode={authMode} 
                 onModeChange={setAuthMode}
