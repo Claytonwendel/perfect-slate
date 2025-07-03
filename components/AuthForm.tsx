@@ -25,7 +25,6 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
   const [success, setSuccess] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [showEmailVerification, setShowEmailVerification] = useState(false)
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
