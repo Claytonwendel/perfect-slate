@@ -1179,13 +1179,13 @@ export default function PerfectSlateGame() {
                 </div>
               </div>
               <h2 className="text-2xl font-bold text-white pixel-font mb-3">
-                CONGRATULATIONS!
+                EMAIL VERIFIED!
               </h2>
               <p className="text-white text-sm pixel-font mb-2">
-                Your email has been verified!
+                Your email has been confirmed!
               </p>
               <p className="text-yellow-300 text-sm pixel-font">
-                You can now play Perfect Slate
+                {user ? 'You can now play Perfect Slate' : 'Please sign in to start playing'}
               </p>
             </div>
             
@@ -1194,17 +1194,31 @@ export default function PerfectSlateGame() {
                 "Good luck out there, champ! 🏆"
               </p>
               
-              <button
-                onClick={() => {
-                  setShowVerificationSuccess(false)
-                  checkUser()
-                }}
-                className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-6 rounded-lg pixel-font text-lg transition-all transform hover:scale-105 shadow-lg flex items-center justify-center space-x-3"
-              >
-                <Trophy className="w-6 h-6" />
-                <span>PLAY NOW!</span>
-                <ArrowRight className="w-6 h-6" />
-              </button>
+              {user ? (
+                <button
+                  onClick={() => {
+                    setShowVerificationSuccess(false)
+                  }}
+                  className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-6 rounded-lg pixel-font text-lg transition-all transform hover:scale-105 shadow-lg flex items-center justify-center space-x-3"
+                >
+                  <Trophy className="w-6 h-6" />
+                  <span>PLAY NOW!</span>
+                  <ArrowRight className="w-6 h-6" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setShowVerificationSuccess(false)
+                    setShowAuthModal(true)
+                    setAuthMode('signin')
+                  }}
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-4 px-6 rounded-lg pixel-font text-lg transition-all transform hover:scale-105 shadow-lg flex items-center justify-center space-x-3"
+                >
+                  <LogOut className="w-6 h-6" />
+                  <span>SIGN IN TO PLAY</span>
+                  <ArrowRight className="w-6 h-6" />
+                </button>
+              )}
               
               <div className="mt-4 flex items-center justify-center space-x-2 text-xs text-gray-500 pixel-font">
                 <Zap className="w-4 h-4 text-yellow-500" />
