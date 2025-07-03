@@ -34,7 +34,7 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
         .from('users')
         .select('id')
         .eq('username', username)
-        .single()
+        .maybeSingle() // Fixed: use maybeSingle() instead of single()
 
       if (existingUser) {
         setError('Username already taken')
