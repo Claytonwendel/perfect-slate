@@ -5,9 +5,10 @@ import {
   Users, DollarSign, Trophy, Clock, X, Trash2,
   ChevronDown, AlertCircle, FileText, BarChart3, 
   User, Coins, Zap, Menu, CircleDollarSign, Calendar,
-  Lock, Unlock, CheckCircle, XCircle
+  Lock, Unlock, CheckCircle, XCircle, LogOut
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import AuthForm from '@/components/AuthForm'
 
 // Type definitions
 type Game = {
@@ -200,6 +201,15 @@ export default function PerfectSlateGame() {
         setTokenBalance(userData.token_balance)
       }
     }
+  }
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    setUser(null)
+    setTokenBalance(0)
+    setSelectedPicks([])
+    setGamesWithTokens(new Set())
+    setIsSubmitted(false)
   }
 
   const loadContestData = async () => {
@@ -401,15 +411,7 @@ export default function PerfectSlateGame() {
     const isGameDisabled = hasToken || isSubmitted || !isAvailable || contestStatus !== 'active'
     const isGameStarted = game.status === 'in_progress' || game.status === 'final'
     
-    // Calculate pick percentages
-    const totalSpreadPicks = (homeSpread?.times_selected || 0) + (awaySpread?.times_selected || 0)
-    const totalTotalPicks = (overTotal?.times_selected || 0) + (underTotal?.times_selected || 0)
-    
-    // Get city names
-    const homeCity = getCityName(game.home_team)
-    const awayCity = getCityName(game.away_team)
-    
-    // Calculate pick percentages
+    // Calculate pick percentages ONLY ONCE
     const totalSpreadPicks = (homeSpread?.times_selected || 0) + (awaySpread?.times_selected || 0)
     const totalTotalPicks = (overTotal?.times_selected || 0) + (underTotal?.times_selected || 0)
     
@@ -417,6 +419,10 @@ export default function PerfectSlateGame() {
     const awaySpreadPct = totalSpreadPicks > 0 ? Math.round((awaySpread?.times_selected || 0) / totalSpreadPicks * 100) : 50
     const overPct = totalTotalPicks > 0 ? Math.round((overTotal?.times_selected || 0) / totalTotalPicks * 100) : 50
     const underPct = totalTotalPicks > 0 ? Math.round((underTotal?.times_selected || 0) / totalTotalPicks * 100) : 50
+    
+    // Get city names
+    const homeCity = getCityName(game.home_team)
+    const awayCity = getCityName(game.away_team)
     
     // Apply no-tie logic to spreads and totals
     const homeSpreadDisplay = applyNoTieLogic(game.home_spread)
@@ -713,10 +719,19 @@ export default function PerfectSlateGame() {
                 <span>LEADERBOARDS</span>
               </button>
               {user ? (
-                <button className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center space-x-2">
-                  <User className="w-4 h-4" />
-                  <span>PROFILE</span>
-                </button>
+                <div className="flex items-center space-x-4">
+                  <button className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center space-x-2">
+                    <User className="w-4 h-4" />
+                    <span>PROFILE</span>
+                  </button>
+                  <button 
+                    onClick={handleSignOut}
+                    className="text-white pixel-font text-sm hover:text-red-300 transition-colors flex items-center space-x-2"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>SIGN OUT</span>
+                  </button>
+                </div>
               ) : (
                 <button 
                   onClick={() => {
@@ -750,9 +765,17 @@ export default function PerfectSlateGame() {
                 LEADERBOARDS
               </button>
               {user ? (
-                <button className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">
-                  PROFILE
-                </button>
+                <>
+                  <button className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">
+                    PROFILE
+                  </button>
+                  <button 
+                    onClick={handleSignOut}
+                    className="block w-full text-left text-red-300 pixel-font text-sm py-2 hover:text-red-400 transition-colors"
+                  >
+                    SIGN OUT
+                  </button>
+                </>
               ) : (
                 <button 
                   onClick={() => {
