@@ -162,11 +162,28 @@ export default function PerfectSlateGame() {
 
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signup')
+  const [showVerificationSuccess, setShowVerificationSuccess] = useState(false)
 
   // Fetch initial data
   useEffect(() => {
     loadContestData()
     checkUser()
+    
+    // Check for email verification redirect
+    const checkEmailVerification = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      const urlParams = new URLSearchParams(window.location.search)
+      const isNewUser = urlParams.get('type') === 'signup'
+      
+      if (session && isNewUser) {
+        // User just verified their email
+        setShowVerificationSuccess(true)
+        // Clean up URL
+        window.history.replaceState({}, document.title, window.location.pathname)
+      }
+    }
+    
+    checkEmailVerification()
   }, [selectedSport])
 
   // Timer effect
@@ -1072,6 +1089,53 @@ export default function PerfectSlateGame() {
                   loadContestData()
                 }}
               />
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Email Verification Success Modal */}
+      {showVerificationSuccess && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border-4 border-green-500 relative overflow-hidden">
+            <div className="relative bg-gradient-to-b from-green-500 to-green-600 p-8 text-center">
+              <div className="mb-4">
+                <div className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-full mb-4">
+                  <CheckCircle className="w-12 h-12 text-green-500" />
+                </div>
+              </div>
+              <h2 className="text-2xl font-bold text-white pixel-font mb-3">
+                CONGRATULATIONS!
+              </h2>
+              <p className="text-white text-sm pixel-font mb-2">
+                Your email has been verified!
+              </p>
+              <p className="text-yellow-300 text-sm pixel-font">
+                You can now play Perfect Slate
+              </p>
+            </div>
+            
+            <div className="p-6 text-center">
+              <p className="text-gray-600 text-sm pixel-font mb-6 italic">
+                "Good luck out there, champ! 🏆"
+              </p>
+              
+              <button
+                onClick={() => {
+                  setShowVerificationSuccess(false)
+                  checkUser()
+                }}
+                className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-6 rounded-lg pixel-font text-lg transition-all transform hover:scale-105 shadow-lg flex items-center justify-center space-x-3"
+              >
+                <Trophy className="w-6 h-6" />
+                <span>PLAY NOW!</span>
+                <ArrowRight className="w-6 h-6" />
+              </button>
+              
+              <div className="mt-4 flex items-center justify-center space-x-2 text-xs text-gray-500 pixel-font">
+                <Zap className="w-4 h-4 text-yellow-500" />
+                <span>You've earned your first free token!</span>
+              </div>
             </div>
           </div>
         </div>
