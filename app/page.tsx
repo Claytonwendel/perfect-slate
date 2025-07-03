@@ -167,39 +167,71 @@ export default function PerfectSlateGame() {
   // Fetch initial data
   useEffect(() => {
     loadContestData()
-    checkUser()
     
     // Check for email verification redirect
     const checkEmailVerification = async () => {
-      // Look for Supabase auth hash parameters
+      // Check if we have #confirmed in the URL
+      if (window.location.hash === '#confirmed') {
+        console.log('Email confirmation detected!')
+        
+        // Clean up URL
+        window.history.replaceState({}, document.title, window.location.pathname)
+        
+        // Get the pending email from localStorage
+        const pendingEmail = localStorage.getItem('pendingVerificationEmail')
+        
+        if (pendingEmail) {
+          // Wait a moment for Supabase to process the confirmation
+          setTimeout(async () => {
+            // Check if user is now signed in
+            const { data: { session } } = await supabase.auth.getSession()
+            
+            if (session) {
+              // User is signed in after confirmation
+              setShowVerificationSuccess(true)
+              checkUser()
+              localStorage.removeItem('pendingVerificationEmail')
+            } else {
+              // User confirmed but not auto-signed in
+              // Show success and prompt to sign in
+              setShowVerificationSuccess(true)
+              localStorage.removeItem('pendingVerificationEmail')
+            }
+          }, 1000)
+        }
+      }
+      
+      // Also check Supabase hash parameters (fallback)
       const hashParams = new URLSearchParams(window.location.hash.substring(1))
-      const accessToken = hashParams.get('access_token')
       const type = hashParams.get('type')
       
-      if (accessToken && type === 'signup') {
-        // User just verified their email
-        console.log('Email verification detected!')
-        
-        // Get the session to ensure user is logged in
+      if (type === 'signup') {
         const { data: { session } } = await supabase.auth.getSession()
-        
         if (session) {
-          // Show success modal
           setShowVerificationSuccess(true)
-          // Clean up URL
-          window.history.replaceState({}, document.title, window.location.pathname)
-          // Reload user data
           checkUser()
         }
       }
     }
     
     checkEmailVerification()
+    checkUser()
     
     // Listen for auth state changes
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event)
       if (event === 'SIGNED_IN' && session) {
-        checkUser()
+        await checkUser()
+        
+        // Check if this is from email confirmation
+        if (window.location.hash.includes('confirmed') || localStorage.getItem('pendingVerificationEmail')) {
+          setShowVerificationSuccess(true)
+          localStorage.removeItem('pendingVerificationEmail')
+        }
+      }
+      if (event === 'SIGNED_OUT') {
+        setUser(null)
+        setTokenBalance(0)
       }
     })
     
