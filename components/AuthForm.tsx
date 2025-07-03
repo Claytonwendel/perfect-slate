@@ -1,10 +1,9 @@
-// components/AuthForm.tsx
 'use client'
 
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { 
-  Mail, Lock, User, Trophy, Zap, AlertCircle, 
+import {
+  Mail, Lock, User, Trophy, Zap, AlertCircle,
   CheckCircle, Loader, ArrowRight, Star, Users,
   Eye, EyeOff
 } from 'lucide-react'
@@ -32,7 +31,6 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
     setError('')
     setSuccess('')
 
-    // Check if passwords match
     if (password !== confirmPassword) {
       setError('Passwords do not match')
       setLoading(false)
@@ -40,7 +38,6 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
     }
 
     try {
-      // Check if username is taken
       const { data: existingUser } = await supabase
         .from('users')
         .select('id')
@@ -53,7 +50,6 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
         return
       }
 
-      // Sign up user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -66,93 +62,12 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
       if (authError) throw authError
 
       if (authData.user) {
-        // Small delay to ensure auth user is fully created
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        // Get the session to ensure auth context is established
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        if (sessionError || !session) {
-          console.error('Session error:', sessionError);
-          throw new Error('Failed to establish session after signup');
-        }
-        
-        console.log('Auth user ID:', authData.user.id);
-        console.log('Session user ID:', session.user.id);
-        
-        // Create user profile with ALL columns from the schema
-        const { error: profileError } = await supabase
-          .from('users')
-          .insert({
-            // Identification & Profile
-            id: authData.user.id,
-            email: authData.user.email,
-            username,
-            avatar_url: null,
-            favorite_team: null,
-            favorite_sport: 'MLB',
-            best_sport: 'MLB',
-            // Timestamps
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            last_submission_date: null,
-            last_slate_date: null,
-            // Game Participation & Performance
-            total_earnings: 0,
-            earnings_total: 0,
-            perfect_slates: 0,
-            total_slates_submitted: 0,
-            win_percentage: 0,
-            win_rate: 0,
-            current_streak: 0,
-            longest_streak: 0,
-            streak_days: 0,
-            streak_current: 0,
-            total_slates: 0,
-            // Token System
-            token_balance: 0,
-            lifetime_tokens_earned: 0,
-            lifetime_tokens_used: 0,
-            slates_toward_next_token: 0,
-            // Status & Flags
-            is_active: true,
-            is_verified: false,
-            verified: false,
-            verification_status: 'unverified',
-            // Tracking & Notifications
-            notification_preferences: {},
-            // Special Stats
-            bad_beats_9: 0,
-            bad_beats_8: 0,
-            // Referral System
-            referral_code: null,
-            referred_by: null
-          })
+        await new Promise(resolve => setTimeout(resolve, 100))
 
-        if (profileError) {
-          console.error('Profile creation error details:', {
-            error: profileError,
-            message: profileError.message,
-            details: profileError.details,
-            hint: profileError.hint,
-            code: profileError.code
-          });
-          
-          // If it's an RLS error, provide helpful message
-          if (profileError.code === '42501') {
-            throw new Error('Database permissions error. Please contact support.');
-          } else if (profileError.message?.includes('duplicate key')) {
-            throw new Error('A profile already exists for this user.');
-          } else {
-            throw new Error(`Database error: ${profileError.message || 'Failed to create user profile'}`);
-          }
-        }
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        if (sessionError || !session) throw new Error('Session not established')
 
-        // Auto sign in after signup
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password
-        })
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
 
         if (!signInError) {
           onSuccess()
@@ -175,14 +90,8 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
     setError('')
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      })
-
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
-
-      // Successful sign in
       onSuccess()
     } catch (err: any) {
       setError(err.message)
@@ -217,14 +126,13 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
         </button>
       </div>
 
-      {/* Error/Success Messages */}
+      {/* Error/Success */}
       {error && (
         <div className="mb-4 p-3 bg-red-100 border-2 border-red-300 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
           <span className="text-xs pixel-font text-red-700">{error}</span>
         </div>
       )}
-
       {success && (
         <div className="mb-4 p-3 bg-green-100 border-2 border-green-300 rounded-lg flex items-center space-x-2">
           <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
@@ -236,9 +144,7 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
       <form onSubmit={mode === 'signin' ? handleSignIn : handleSignUp}>
         {mode === 'signup' && (
           <div className="mb-4">
-            <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">
-              USERNAME
-            </label>
+            <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">USERNAME</label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
@@ -255,9 +161,7 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
         )}
 
         <div className="mb-4">
-          <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">
-            EMAIL
-          </label>
+          <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">EMAIL</label>
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
@@ -272,13 +176,11 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
         </div>
 
         <div className="mb-4">
-          <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">
-            PASSWORD
-          </label>
+          <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">PASSWORD</label>
           <div className="relative">
             <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
-              type={showPassword ? "text" : "password"}
+              type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full pl-10 pr-12 py-3 border-2 border-gray-300 rounded-lg pixel-font text-sm focus:border-blue-500 focus:outline-none"
@@ -294,27 +196,20 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
               {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
           </div>
-          {mode === 'signup' && (
-            <p className="text-xs text-gray-500 mt-1 pixel-font">
-              Minimum 6 characters
-            </p>
-          )}
         </div>
 
         {mode === 'signup' && (
           <div className="mb-6">
-            <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">
-              CONFIRM PASSWORD
-            </label>
+            <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">CONFIRM PASSWORD</label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
-                type={showConfirmPassword ? "text" : "password"}
+                type={showConfirmPassword ? 'text' : 'password'}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className={`w-full pl-10 pr-12 py-3 border-2 rounded-lg pixel-font text-sm focus:outline-none ${
-                  confirmPassword && password !== confirmPassword 
-                    ? 'border-red-400 focus:border-red-500' 
+                  confirmPassword && password !== confirmPassword
+                    ? 'border-red-400 focus:border-red-500'
                     : 'border-gray-300 focus:border-green-500'
                 }`}
                 placeholder="••••••••"
@@ -330,9 +225,7 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
               </button>
             </div>
             {confirmPassword && password !== confirmPassword && (
-              <p className="text-xs text-red-500 mt-1 pixel-font">
-                Passwords do not match
-              </p>
+              <p className="text-xs text-red-500 mt-1 pixel-font">Passwords do not match</p>
             )}
           </div>
         )}
@@ -359,42 +252,23 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
         </button>
       </form>
 
-      {/* Features for signup */}
+      {/* Signup Features */}
       {mode === 'signup' && (
         <div className="mt-6 pt-6 border-t border-gray-200">
           <div className="grid grid-cols-2 gap-3">
-            <div className="flex items-center space-x-2">
-              <div className="bg-yellow-100 p-2 rounded">
-                <Trophy className="w-4 h-4 text-yellow-600" />
+            {[
+              { icon: <Trophy className="w-4 h-4 text-yellow-600" />, label: 'Win Real $$$' },
+              { icon: <Zap className="w-4 h-4 text-blue-600" />, label: 'Free Tokens' },
+              { icon: <Star className="w-4 h-4 text-green-600" />, label: 'Daily Games' },
+              { icon: <Users className="w-4 h-4 text-purple-600" />, label: 'Leaderboards' }
+            ].map((feature, i) => (
+              <div key={i} className="flex items-center space-x-2">
+                <div className={`p-2 rounded ${feature.label.includes('Win') ? 'bg-yellow-100' : feature.label.includes('Free') ? 'bg-blue-100' : feature.label.includes('Daily') ? 'bg-green-100' : 'bg-purple-100'}`}>
+                  {feature.icon}
+                </div>
+                <span className="text-xs pixel-font text-gray-600">{feature.label}</span>
               </div>
-              <span className="text-xs pixel-font text-gray-600">
-                Win Real $$$
-              </span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="bg-blue-100 p-2 rounded">
-                <Zap className="w-4 h-4 text-blue-600" />
-              </div>
-              <span className="text-xs pixel-font text-gray-600">
-                Free Tokens
-              </span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="bg-green-100 p-2 rounded">
-                <Star className="w-4 h-4 text-green-600" />
-              </div>
-              <span className="text-xs pixel-font text-gray-600">
-                Daily Games
-              </span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="bg-purple-100 p-2 rounded">
-                <Users className="w-4 h-4 text-purple-600" />
-              </div>
-              <span className="text-xs pixel-font text-gray-600">
-                Leaderboards
-              </span>
-            </div>
+            ))}
           </div>
         </div>
       )}
