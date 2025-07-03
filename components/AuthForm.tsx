@@ -66,7 +66,7 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
       if (authError) throw authError
 
       if (authData.user) {
-        // Create user profile with all required fields
+        // Create user profile with correct column names
         const { error: profileError } = await supabase
           .from('users')
           .insert({
@@ -74,16 +74,45 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
             email: authData.user.email,
             username,
             created_at: new Date().toISOString(),
-            token_balance: 0,
+            updated_at: new Date().toISOString(),
+            // Money related
+            total_earnings: 0,
             earnings_total: 0,
-            perfect_slates: 0,
-            win_rate: 0,
-            streak_days: 0,
             balance: 0,
+            // Slates and wins
+            perfect_slates: 0,
+            total_slates_submitted: 0,
+            total_slates: 0,
+            win_percentage: 0,
+            win_rate: 0,
+            bad_beats_9: 0,
+            bad_beats_8: 0,
+            // Streaks
+            current_streak: 0,
+            longest_streak: 0,
+            streak_days: 0,
+            streak_current: 0,
+            // Tokens
+            token_balance: 0,
+            lifetime_tokens_earned: 0,
+            lifetime_tokens_used: 0,
+            slates_toward_next_token: 0,
+            // Status flags
             is_active: true,
-            slates_submitted: 0,
-            highest_score: 0,
-            favorite_sport: 'MLB' // Default to MLB
+            is_verified: false,
+            verified: false,
+            verification_status: 'unverified',
+            // Preferences
+            notification_preferences: {},
+            favorite_sport: 'MLB',
+            favorite_team: null,
+            avatar_url: null,
+            // Dates
+            last_submission_date: null,
+            last_slate_date: null,
+            // Referrals
+            referral_code: null,
+            referred_by: null
           })
 
         if (profileError) {
