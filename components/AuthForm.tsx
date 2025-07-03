@@ -61,21 +61,9 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
 
       if (authError) throw authError
 
-      if (authData.user) {
-        await new Promise(resolve => setTimeout(resolve, 100))
-
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-        if (sessionError || !session) throw new Error('Session not established')
-
-        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
-
-        if (!signInError) {
-          onSuccess()
-        } else {
-          setSuccess('Account created! Please sign in.')
-          onModeChange('signin')
-        }
-      }
+      // ✅ Email confirmation flow
+      setSuccess('Account created! Please check your email and confirm before signing in.')
+      onModeChange('signin')
     } catch (err: any) {
       console.error('Signup error:', err)
       setError(err.message)
@@ -90,8 +78,13 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
     setError('')
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      })
+
       if (error) throw error
+
       onSuccess()
     } catch (err: any) {
       setError(err.message)
@@ -126,13 +119,14 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
         </button>
       </div>
 
-      {/* Error/Success */}
+      {/* Feedback */}
       {error && (
         <div className="mb-4 p-3 bg-red-100 border-2 border-red-300 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
           <span className="text-xs pixel-font text-red-700">{error}</span>
         </div>
       )}
+
       {success && (
         <div className="mb-4 p-3 bg-green-100 border-2 border-green-300 rounded-lg flex items-center space-x-2">
           <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
@@ -196,6 +190,9 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
               {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
           </div>
+          {mode === 'signup' && (
+            <p className="text-xs text-gray-500 mt-1 pixel-font">Minimum 6 characters</p>
+          )}
         </div>
 
         {mode === 'signup' && (
@@ -252,7 +249,6 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
         </button>
       </form>
 
-      {/* Signup Features */}
       {mode === 'signup' && (
         <div className="mt-6 pt-6 border-t border-gray-200">
           <div className="grid grid-cols-2 gap-3">
@@ -263,9 +259,7 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
               { icon: <Users className="w-4 h-4 text-purple-600" />, label: 'Leaderboards' }
             ].map((feature, i) => (
               <div key={i} className="flex items-center space-x-2">
-                <div className={`p-2 rounded ${feature.label.includes('Win') ? 'bg-yellow-100' : feature.label.includes('Free') ? 'bg-blue-100' : feature.label.includes('Daily') ? 'bg-green-100' : 'bg-purple-100'}`}>
-                  {feature.icon}
-                </div>
+                <div className="bg-gray-100 p-2 rounded">{feature.icon}</div>
                 <span className="text-xs pixel-font text-gray-600">{feature.label}</span>
               </div>
             ))}
