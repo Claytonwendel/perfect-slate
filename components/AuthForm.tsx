@@ -5,7 +5,8 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { 
   Mail, Lock, User, Trophy, Zap, AlertCircle, 
-  CheckCircle, Loader, ArrowRight, Star, Users
+  CheckCircle, Loader, ArrowRight, Star, Users,
+  Eye, EyeOff
 } from 'lucide-react'
 
 interface AuthFormProps {
@@ -17,10 +18,13 @@ interface AuthFormProps {
 export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [username, setUsername] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -28,13 +32,20 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
     setError('')
     setSuccess('')
 
+    // Check if passwords match
+    if (password !== confirmPassword) {
+      setError('Passwords do not match')
+      setLoading(false)
+      return
+    }
+
     try {
       // Check if username is taken
       const { data: existingUser } = await supabase
         .from('users')
         .select('id')
         .eq('username', username)
-        .maybeSingle() // Fixed: use maybeSingle() instead of single()
+        .maybeSingle()
 
       if (existingUser) {
         setError('Username already taken')
@@ -55,17 +66,30 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
       if (authError) throw authError
 
       if (authData.user) {
-        // Create user profile
+        // Create user profile with all required fields
         const { error: profileError } = await supabase
           .from('users')
           .insert({
             id: authData.user.id,
             email: authData.user.email,
             username,
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            token_balance: 0,
+            earnings_total: 0,
+            perfect_slates: 0,
+            win_rate: 0,
+            streak_days: 0,
+            balance: 0,
+            is_active: true,
+            slates_submitted: 0,
+            highest_score: 0,
+            favorite_sport: 'MLB' // Default to MLB
           })
 
-        if (profileError) throw profileError
+        if (profileError) {
+          console.error('Profile creation error:', profileError)
+          throw new Error('Database error saving new user')
+        }
 
         // Auto sign in after signup
         const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -81,6 +105,7 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
         }
       }
     } catch (err: any) {
+      console.error('Signup error:', err)
       setError(err.message)
     } finally {
       setLoading(false)
@@ -189,29 +214,77 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
           </div>
         </div>
 
-        <div className="mb-6">
+        <div className="mb-4">
           <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">
             PASSWORD
           </label>
           <div className="relative">
             <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
-              type="password"
+              type={showPassword ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-lg pixel-font text-sm focus:border-blue-500 focus:outline-none"
+              className="w-full pl-10 pr-12 py-3 border-2 border-gray-300 rounded-lg pixel-font text-sm focus:border-blue-500 focus:outline-none"
               placeholder="••••••••"
               required
               minLength={6}
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            </button>
           </div>
+          {mode === 'signup' && (
+            <p className="text-xs text-gray-500 mt-1 pixel-font">
+              Minimum 6 characters
+            </p>
+          )}
         </div>
+
+        {mode === 'signup' && (
+          <div className="mb-6">
+            <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">
+              CONFIRM PASSWORD
+            </label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type={showConfirmPassword ? "text" : "password"}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className={`w-full pl-10 pr-12 py-3 border-2 rounded-lg pixel-font text-sm focus:outline-none ${
+                  confirmPassword && password !== confirmPassword 
+                    ? 'border-red-400 focus:border-red-500' 
+                    : 'border-gray-300 focus:border-green-500'
+                }`}
+                placeholder="••••••••"
+                required
+                minLength={6}
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
+            {confirmPassword && password !== confirmPassword && (
+              <p className="text-xs text-red-500 mt-1 pixel-font">
+                Passwords do not match
+              </p>
+            )}
+          </div>
+        )}
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || (mode === 'signup' && password !== confirmPassword)}
           className={`w-full py-4 rounded-lg pixel-font text-sm font-bold transition-all flex items-center justify-center space-x-2 shadow-md ${
-            loading
+            loading || (mode === 'signup' && confirmPassword && password !== confirmPassword)
               ? 'bg-gray-400 cursor-not-allowed'
               : mode === 'signin'
               ? 'bg-blue-500 hover:bg-blue-600 text-white'
