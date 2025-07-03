@@ -1,24 +1,42 @@
 // app/auth/callback/route.ts
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
+  const token = requestUrl.searchParams.get('token')
+  const type = requestUrl.searchParams.get('type')
 
-  if (code) {
+  if (code || token) {
     // Create Supabase client
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
     
-    // Exchange code for session
-    const { data: { session }, error } = await supabase.auth.exchangeCodeForSession(code)
+    let session = null
+    let error = null
+
+    if (code) {
+      // OAuth flow
+      const result = await supabase.auth.exchangeCodeForSession(code)
+      session = result.data.session
+      error = result.error
+    } else if (token && type === 'magiclink') {
+      // Magic link flow
+      const result = await supabase.auth.verifyOtp({
+        token_hash: token,
+        type: 'magiclink',
+      })
+      session = result.data.session
+      error = result.error
+    }
     
     if (!error && session) {
       // User is now logged in!
-      // Create their profile if it doesn't exist
+      // Check if profile exists
       const { data: profile } = await supabase
         .from('users')
         .select('id')
@@ -26,11 +44,16 @@ export async function GET(request: Request) {
         .single()
       
       if (!profile) {
+        // Get pending username from the browser (we'll pass it via URL)
+        const pendingUsername = requestUrl.searchParams.get('username') || 
+                               session.user.email?.split('@')[0] || 
+                               'player'
+        
         // Create profile
         await supabase.from('users').insert({
           id: session.user.id,
           email: session.user.email,
-          username: session.user.user_metadata?.username || session.user.email?.split('@')[0],
+          username: pendingUsername,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           total_earnings: 0,
@@ -61,7 +84,7 @@ export async function GET(request: Request) {
       }
       
       // Redirect to home with success flag
-      return NextResponse.redirect(new URL('/?verified=true', requestUrl.origin))
+      return NextResponse.redirect(new URL('/?welcome=true', requestUrl.origin))
     }
   }
 
