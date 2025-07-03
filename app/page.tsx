@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { 
   Users, DollarSign, Trophy, Clock, X, Trash2,
   ChevronDown, AlertCircle, FileText, BarChart3, 
@@ -140,6 +141,8 @@ const applyNoTieLogic = (value: number, isUnder: boolean = false): number => {
 }
 
 export default function PerfectSlateGame() {
+  const router = useRouter()
+  
   // State
   const [selectedSport, setSelectedSport] = useState<'NFL' | 'NCAAF' | 'MLB'>('MLB')
   const [showSportDropdown, setShowSportDropdown] = useState(false)
@@ -811,7 +814,10 @@ export default function PerfectSlateGame() {
               </button>
               {user ? (
                 <div className="flex items-center space-x-4">
-                  <button className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center space-x-2">
+                  <button 
+                    onClick={() => router.push('/profile')}
+                    className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center space-x-2"
+                  >
                     <User className="w-4 h-4" />
                     <span>PROFILE</span>
                   </button>
@@ -857,7 +863,13 @@ export default function PerfectSlateGame() {
               </button>
               {user ? (
                 <>
-                  <button className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">
+                  <button 
+                    onClick={() => {
+                      router.push('/profile')
+                      setShowMobileMenu(false)
+                    }}
+                    className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors"
+                  >
                     PROFILE
                   </button>
                   <button 
