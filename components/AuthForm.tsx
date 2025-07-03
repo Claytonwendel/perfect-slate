@@ -43,9 +43,12 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
           setLoading(false)
           return
         }
+      }
 
-        // Store username temporarily so we can use it after they sign in
-        localStorage.setItem('pendingUsername', username)
+      // Create redirect URL with username for signup
+      let redirectUrl = `${window.location.origin}/auth/callback`
+      if (mode === 'signup' && username) {
+        redirectUrl += `?username=${encodeURIComponent(username)}`
       }
 
       // Send magic link
@@ -53,7 +56,7 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
         email,
         options: {
           shouldCreateUser: mode === 'signup',
-          emailRedirectTo: `${window.location.origin}/auth/callback`
+          emailRedirectTo: redirectUrl
         }
       })
 
