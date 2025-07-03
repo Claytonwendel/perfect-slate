@@ -1,9 +1,10 @@
+// components/AuthForm.tsx
 'use client'
 
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import {
-  Mail, Lock, User, Trophy, Zap, AlertCircle,
+import { 
+  Mail, Lock, User, Trophy, Zap, AlertCircle, 
   CheckCircle, Loader, ArrowRight, Star, Users,
   Eye, EyeOff
 } from 'lucide-react'
@@ -24,6 +25,7 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
   const [success, setSuccess] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [showEmailVerification, setShowEmailVerification] = useState(false)
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -31,6 +33,7 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
     setError('')
     setSuccess('')
 
+    // Check if passwords match
     if (password !== confirmPassword) {
       setError('Passwords do not match')
       setLoading(false)
@@ -38,6 +41,7 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
     }
 
     try {
+      // Check if username is taken
       const { data: existingUser } = await supabase
         .from('users')
         .select('id')
@@ -50,6 +54,7 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
         return
       }
 
+      // Sign up user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -61,9 +66,90 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
 
       if (authError) throw authError
 
-      // ✅ Email confirmation flow
-      setSuccess('Account created! Please check your email and confirm before signing in.')
-      onModeChange('signin')
+      if (authData.user) {
+        // Log the user ID to verify it's created
+        console.log('Auth user created with ID:', authData.user.id)
+        
+        // Create user profile with correct column names
+        const { data: insertData, error: profileError } = await supabase
+          .from('users')
+          .insert({
+            id: authData.user.id,
+            email: authData.user.email,
+            username,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            // Money related
+            total_earnings: 0,
+            earnings_total: 0,
+            balance: 0,
+            // Slates and wins
+            perfect_slates: 0,
+            total_slates_submitted: 0,
+            total_slates: 0,
+            win_percentage: 0,
+            win_rate: 0,
+            bad_beats_9: 0,
+            bad_beats_8: 0,
+            // Streaks
+            current_streak: 0,
+            longest_streak: 0,
+            streak_days: 0,
+            streak_current: 0,
+            // Tokens
+            token_balance: 0,
+            lifetime_tokens_earned: 0,
+            lifetime_tokens_used: 0,
+            slates_toward_next_token: 0,
+            // Status flags
+            is_active: true,
+            is_verified: false,
+            verified: false,
+            verification_status: 'unverified',
+            // Preferences
+            notification_preferences: {},
+            favorite_sport: 'MLB',
+            favorite_team: null,
+            avatar_url: null,
+            // Dates
+            last_submission_date: null,
+            last_slate_date: null,
+            // Referrals
+            referral_code: null,
+            referred_by: null
+          })
+          .select()
+
+        if (profileError) {
+          console.error('Profile creation error details:', {
+            error: profileError,
+            message: profileError.message,
+            code: profileError.code,
+            details: profileError.details,
+            hint: profileError.hint
+          })
+          
+          // Try to delete the auth user if profile creation fails
+          await supabase.auth.admin.deleteUser(authData.user.id).catch(() => {})
+          
+          throw new Error('Database error saving new user')
+        }
+
+        console.log('Profile created successfully:', insertData)
+
+        // Auto sign in after signup
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        })
+
+        if (!signInError) {
+          onSuccess()
+        } else {
+          setSuccess('Account created! Please sign in.')
+          onModeChange('signin')
+        }
+      }
     } catch (err: any) {
       console.error('Signup error:', err)
       setError(err.message)
@@ -85,6 +171,7 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
 
       if (error) throw error
 
+      // Successful sign in
       onSuccess()
     } catch (err: any) {
       setError(err.message)
@@ -119,7 +206,7 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
         </button>
       </div>
 
-      {/* Feedback */}
+      {/* Error/Success Messages */}
       {error && (
         <div className="mb-4 p-3 bg-red-100 border-2 border-red-300 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
@@ -138,7 +225,9 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
       <form onSubmit={mode === 'signin' ? handleSignIn : handleSignUp}>
         {mode === 'signup' && (
           <div className="mb-4">
-            <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">USERNAME</label>
+            <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">
+              USERNAME
+            </label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
@@ -155,7 +244,9 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
         )}
 
         <div className="mb-4">
-          <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">EMAIL</label>
+          <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">
+            EMAIL
+          </label>
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
@@ -170,11 +261,13 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
         </div>
 
         <div className="mb-4">
-          <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">PASSWORD</label>
+          <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">
+            PASSWORD
+          </label>
           <div className="relative">
             <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
-              type={showPassword ? 'text' : 'password'}
+              type={showPassword ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full pl-10 pr-12 py-3 border-2 border-gray-300 rounded-lg pixel-font text-sm focus:border-blue-500 focus:outline-none"
@@ -191,22 +284,26 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
             </button>
           </div>
           {mode === 'signup' && (
-            <p className="text-xs text-gray-500 mt-1 pixel-font">Minimum 6 characters</p>
+            <p className="text-xs text-gray-500 mt-1 pixel-font">
+              Minimum 6 characters
+            </p>
           )}
         </div>
 
         {mode === 'signup' && (
           <div className="mb-6">
-            <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">CONFIRM PASSWORD</label>
+            <label className="block text-xs font-bold pixel-font text-gray-700 mb-2">
+              CONFIRM PASSWORD
+            </label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
-                type={showConfirmPassword ? 'text' : 'password'}
+                type={showConfirmPassword ? "text" : "password"}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className={`w-full pl-10 pr-12 py-3 border-2 rounded-lg pixel-font text-sm focus:outline-none ${
-                  confirmPassword && password !== confirmPassword
-                    ? 'border-red-400 focus:border-red-500'
+                  confirmPassword && password !== confirmPassword 
+                    ? 'border-red-400 focus:border-red-500' 
                     : 'border-gray-300 focus:border-green-500'
                 }`}
                 placeholder="••••••••"
@@ -222,7 +319,9 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
               </button>
             </div>
             {confirmPassword && password !== confirmPassword && (
-              <p className="text-xs text-red-500 mt-1 pixel-font">Passwords do not match</p>
+              <p className="text-xs text-red-500 mt-1 pixel-font">
+                Passwords do not match
+              </p>
             )}
           </div>
         )}
@@ -249,20 +348,42 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
         </button>
       </form>
 
+      {/* Features for signup */}
       {mode === 'signup' && (
         <div className="mt-6 pt-6 border-t border-gray-200">
           <div className="grid grid-cols-2 gap-3">
-            {[
-              { icon: <Trophy className="w-4 h-4 text-yellow-600" />, label: 'Win Real $$$' },
-              { icon: <Zap className="w-4 h-4 text-blue-600" />, label: 'Free Tokens' },
-              { icon: <Star className="w-4 h-4 text-green-600" />, label: 'Daily Games' },
-              { icon: <Users className="w-4 h-4 text-purple-600" />, label: 'Leaderboards' }
-            ].map((feature, i) => (
-              <div key={i} className="flex items-center space-x-2">
-                <div className="bg-gray-100 p-2 rounded">{feature.icon}</div>
-                <span className="text-xs pixel-font text-gray-600">{feature.label}</span>
+            <div className="flex items-center space-x-2">
+              <div className="bg-yellow-100 p-2 rounded">
+                <Trophy className="w-4 h-4 text-yellow-600" />
               </div>
-            ))}
+              <span className="text-xs pixel-font text-gray-600">
+                Win Real $$$
+              </span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="bg-blue-100 p-2 rounded">
+                <Zap className="w-4 h-4 text-blue-600" />
+              </div>
+              <span className="text-xs pixel-font text-gray-600">
+                Free Tokens
+              </span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="bg-green-100 p-2 rounded">
+                <Star className="w-4 h-4 text-green-600" />
+              </div>
+              <span className="text-xs pixel-font text-gray-600">
+                Daily Games
+              </span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="bg-purple-100 p-2 rounded">
+                <Users className="w-4 h-4 text-purple-600" />
+              </div>
+              <span className="text-xs pixel-font text-gray-600">
+                Leaderboards
+              </span>
+            </div>
           </div>
         </div>
       )}
