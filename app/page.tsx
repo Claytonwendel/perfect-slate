@@ -171,53 +171,22 @@ export default function PerfectSlateGame() {
   useEffect(() => {
     loadContestData()
     
-    // Check for email verification redirect
-    const checkEmailVerification = async () => {
-      // Check if we have #confirmed in the URL
-      if (window.location.hash === '#confirmed') {
-        console.log('Email confirmation detected!')
-        
-        // Clean up URL
-        window.history.replaceState({}, document.title, window.location.pathname)
-        
-        // Get the pending email from localStorage
-        const pendingEmail = localStorage.getItem('pendingVerificationEmail')
-        
-        if (pendingEmail) {
-          // Wait a moment for Supabase to process the confirmation
-          setTimeout(async () => {
-            // Check if user is now signed in
-            const { data: { session } } = await supabase.auth.getSession()
-            
-            if (session) {
-              // User is signed in after confirmation
-              setShowVerificationSuccess(true)
-              checkUser()
-              localStorage.removeItem('pendingVerificationEmail')
-            } else {
-              // User confirmed but not auto-signed in
-              // Show success and prompt to sign in
-              setShowVerificationSuccess(true)
-              localStorage.removeItem('pendingVerificationEmail')
-            }
-          }, 1000)
-        }
-      }
-      
-      // Also check Supabase hash parameters (fallback)
-      const hashParams = new URLSearchParams(window.location.hash.substring(1))
-      const type = hashParams.get('type')
-      
-      if (type === 'signup') {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (session) {
-          setShowVerificationSuccess(true)
-          checkUser()
-        }
-      }
+    // Check for verification success
+    const urlParams = new URLSearchParams(window.location.search)
+    const verified = urlParams.get('verified')
+    const error = urlParams.get('error')
+    
+    if (verified === 'true') {
+      setShowVerificationSuccess(true)
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname)
     }
     
-    checkEmailVerification()
+    if (error === 'auth') {
+      // Handle auth error
+      console.error('Authentication error')
+    }
+    
     checkUser()
     
     // Listen for auth state changes
@@ -225,12 +194,6 @@ export default function PerfectSlateGame() {
       console.log('Auth state changed:', event)
       if (event === 'SIGNED_IN' && session) {
         await checkUser()
-        
-        // Check if this is from email confirmation
-        if (window.location.hash.includes('confirmed') || localStorage.getItem('pendingVerificationEmail')) {
-          setShowVerificationSuccess(true)
-          localStorage.removeItem('pendingVerificationEmail')
-        }
       }
       if (event === 'SIGNED_OUT') {
         setUser(null)
