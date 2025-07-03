@@ -66,58 +66,86 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
       if (authError) throw authError
 
       if (authData.user) {
-        // Create user profile with correct column names
+        // Small delay to ensure auth user is fully created
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Get the session to ensure auth context is established
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError || !session) {
+          console.error('Session error:', sessionError);
+          throw new Error('Failed to establish session after signup');
+        }
+        
+        console.log('Auth user ID:', authData.user.id);
+        console.log('Session user ID:', session.user.id);
+        
+        // Create user profile with ALL columns from the schema
         const { error: profileError } = await supabase
           .from('users')
           .insert({
+            // Identification & Profile
             id: authData.user.id,
             email: authData.user.email,
             username,
+            avatar_url: null,
+            favorite_team: null,
+            favorite_sport: 'MLB',
+            best_sport: 'MLB',
+            // Timestamps
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            // Money related
+            last_submission_date: null,
+            last_slate_date: null,
+            // Game Participation & Performance
             total_earnings: 0,
             earnings_total: 0,
-            balance: 0,
-            // Slates and wins
             perfect_slates: 0,
             total_slates_submitted: 0,
-            total_slates: 0,
             win_percentage: 0,
             win_rate: 0,
-            bad_beats_9: 0,
-            bad_beats_8: 0,
-            // Streaks
             current_streak: 0,
             longest_streak: 0,
             streak_days: 0,
             streak_current: 0,
-            // Tokens
+            total_slates: 0,
+            // Token System
             token_balance: 0,
             lifetime_tokens_earned: 0,
             lifetime_tokens_used: 0,
             slates_toward_next_token: 0,
-            // Status flags
+            // Status & Flags
             is_active: true,
             is_verified: false,
             verified: false,
             verification_status: 'unverified',
-            // Preferences
+            // Tracking & Notifications
             notification_preferences: {},
-            favorite_sport: 'MLB',
-            favorite_team: null,
-            avatar_url: null,
-            // Dates
-            last_submission_date: null,
-            last_slate_date: null,
-            // Referrals
+            // Special Stats
+            bad_beats_9: 0,
+            bad_beats_8: 0,
+            // Referral System
             referral_code: null,
             referred_by: null
           })
 
         if (profileError) {
-          console.error('Profile creation error:', profileError)
-          throw new Error('Database error saving new user')
+          console.error('Profile creation error details:', {
+            error: profileError,
+            message: profileError.message,
+            details: profileError.details,
+            hint: profileError.hint,
+            code: profileError.code
+          });
+          
+          // If it's an RLS error, provide helpful message
+          if (profileError.code === '42501') {
+            throw new Error('Database permissions error. Please contact support.');
+          } else if (profileError.message?.includes('duplicate key')) {
+            throw new Error('A profile already exists for this user.');
+          } else {
+            throw new Error(`Database error: ${profileError.message || 'Failed to create user profile'}`);
+          }
         }
 
         // Auto sign in after signup
