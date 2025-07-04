@@ -43,21 +43,71 @@ export async function GET(request: Request) {
         .single()
       
       if (!profile && !profileError) {
-        // Get pending username from URL
         const pendingUsername = requestUrl.searchParams.get('username') || 
                                session.user.email?.split('@')[0] || 
                                'player'
         
-        // MINIMAL INSERT - Only essential fields
-        const { error: insertError } = await supabase.from('users').insert({
-          id: session.user.id,
-          email: session.user.email,
-          username: pendingUsername
-        })
+        // DETAILED DEBUGGING
+        console.log('=== DEBUG INFO ===')
+        console.log('Session User ID:', session.user.id)
+        console.log('Session User ID Type:', typeof session.user.id)
+        console.log('Session User Email:', session.user.email)
+        console.log('Pending Username:', pendingUsername)
+        console.log('Profile check result:', { profile, profileError })
         
-        if (insertError) {
-          console.error('Database insert error:', insertError)
-          return NextResponse.redirect(new URL('/?error=database', requestUrl.origin))
+        // Check if user already exists by email
+        const { data: existingByEmail, error: emailCheckError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', session.user.email)
+          .single()
+        
+        console.log('Email check result:', { existingByEmail, emailCheckError })
+        
+        if (existingByEmail) {
+          console.log('User already exists with this email')
+          // User exists, continue to redirect
+        } else {
+          console.log('Attempting to insert new user...')
+          
+          // Try to insert new user
+          const { data: insertData, error: insertError } = await supabase.from('users').insert({
+            id: session.user.id,
+            email: session.user.email,
+            username: pendingUsername
+          })
+          
+          console.log('Insert result:', { insertData, insertError })
+          
+          if (insertError) {
+            console.error('=== DETAILED INSERT ERROR ===')
+            console.error('Error message:', insertError.message)
+            console.error('Error code:', insertError.code)
+            console.error('Error details:', insertError.details)
+            console.error('Error hint:', insertError.hint)
+            console.error('Full error object:', JSON.stringify(insertError, null, 2))
+            
+            if (insertError.message.includes('username')) {
+              console.log('Username conflict detected, generating unique username...')
+              const uniqueUsername = `${pendingUsername}${Math.floor(Math.random() * 1000)}`
+              console.log('Retry with username:', uniqueUsername)
+              
+              const { error: retryError } = await supabase.from('users').insert({
+                id: session.user.id,
+                email: session.user.email,
+                username: uniqueUsername
+              })
+              
+              if (retryError) {
+                console.error('Retry insert error:', retryError)
+                return NextResponse.redirect(new URL('/?error=database&details=' + encodeURIComponent(retryError.message), requestUrl.origin))
+              }
+            } else {
+              return NextResponse.redirect(new URL('/?error=database&details=' + encodeURIComponent(insertError.message), requestUrl.origin))
+            }
+          } else {
+            console.log('✅ User created successfully!')
+          }
         }
       }
       
