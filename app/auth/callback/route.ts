@@ -37,7 +37,7 @@ export async function GET(request: Request) {
       // User is now logged in!
       // Check if profile exists
       const { data: profile, error: profileError } = await supabase
-        .from('users')
+        .from('user_profiles')
         .select('id')
         .eq('id', session.user.id)
         .single()
@@ -57,7 +57,7 @@ export async function GET(request: Request) {
         
         // Check if user already exists by email
         const { data: existingByEmail, error: emailCheckError } = await supabase
-          .from('users')
+          .from('user_profiles')
           .select('id')
           .eq('email', session.user.email)
           .single()
@@ -71,7 +71,7 @@ export async function GET(request: Request) {
           console.log('Attempting to insert new user...')
           
           // Try to insert new user
-          const { data: insertData, error: insertError } = await supabase.from('users').insert({
+          const { data: insertData, error: insertError } = await supabase.from('user_profiles').insert({
             id: session.user.id,
             email: session.user.email,
             username: pendingUsername
@@ -92,7 +92,7 @@ export async function GET(request: Request) {
               const uniqueUsername = `${pendingUsername}${Math.floor(Math.random() * 1000)}`
               console.log('Retry with username:', uniqueUsername)
               
-              const { error: retryError } = await supabase.from('users').insert({
+              const { error: retryError } = await supabase.from('user_profiles').insert({
                 id: session.user.id,
                 email: session.user.email,
                 username: uniqueUsername
