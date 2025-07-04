@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { 
-  Users, DollarSign, Trophy, Clock, X, Trash2,
+  User_profiles, DollarSign, Trophy, Clock, X, Trash2,
   ChevronDown, AlertCircle, FileText, BarChart3, 
   User, Coins, Zap, Menu, CircleDollarSign, Calendar,
   Lock, Unlock, CheckCircle, XCircle, LogOut, ArrowRight
@@ -231,7 +231,7 @@ export default function PerfectSlateGame() {
       
       // Check if user profile exists
       const { data: userData, error } = await supabase
-        .from('users')
+        .from('user_profiles')
         .select('token_balance')
         .eq('id', user.id)
         .single()
@@ -245,7 +245,7 @@ export default function PerfectSlateGame() {
         if (!createError) {
           // Try again to get the token balance
           const { data: newUserData } = await supabase
-            .from('users')
+            .from('user_profiles')
             .select('token_balance')
             .eq('id', user.id)
             .single()
@@ -882,7 +882,7 @@ export default function PerfectSlateGame() {
           <div className="flex justify-center items-center space-x-6 md:space-x-8 text-white mb-8">
             <div>
               <div className="flex items-center justify-center space-x-2 mb-1">
-                <Users className="w-4 h-4 md:w-5 md:h-5" />
+                <User_profiles className="w-4 h-4 md:w-5 md:h-5" />
                 <span className="text-lg md:text-2xl font-bold pixel-font">
                   {currentContest?.total_entries || 0}
                 </span>
