@@ -882,7 +882,7 @@ export default function PerfectSlateGame() {
           <div className="flex justify-center items-center space-x-6 md:space-x-8 text-white mb-8">
             <div>
               <div className="flex items-center justify-center space-x-2 mb-1">
-                <User_profiles className="w-4 h-4 md:w-5 md:h-5" />
+                <Users className="w-4 h-4 md:w-5 md:h-5" />
                 <span className="text-lg md:text-2xl font-bold pixel-font">
                   {currentContest?.total_entries || 0}
                 </span>
