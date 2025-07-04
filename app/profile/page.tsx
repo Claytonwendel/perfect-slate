@@ -57,7 +57,7 @@ export default function ProfilePage() {
 
       // Get user profile
       const { data: profileData, error } = await supabase
-        .from('users')
+        .from('user_profiles')
         .select('*')
         .eq('id', user.id)
         .single()
@@ -83,7 +83,7 @@ export default function ProfilePage() {
 
   const createProfile = async (user: any) => {
     const { data, error } = await supabase
-      .from('users')
+      .from('user_profiles')
       .insert({
         id: user.id,
         email: user.email,
@@ -129,7 +129,7 @@ export default function ProfilePage() {
 
     setSaving(true)
     const { error } = await supabase
-      .from('users')
+      .from('user_profiles')
       .update({
         username,
         favorite_team: favoriteTeam,
