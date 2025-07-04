@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { 
-  User_profiles, DollarSign, Trophy, Clock, X, Trash2,
+  Users, DollarSign, Trophy, Clock, X, Trash2,
   ChevronDown, AlertCircle, FileText, BarChart3, 
   User, Coins, Zap, Menu, CircleDollarSign, Calendar,
   Lock, Unlock, CheckCircle, XCircle, LogOut, ArrowRight
