@@ -42,27 +42,20 @@ export async function GET(request: Request) {
         .eq('id', session.user.id)
         .single()
       
-      if (!profile && !profileError) {
+      // Only create profile if it doesn't exist AND there was no error finding it
+      if (!profile && profileError?.code === 'PGRST116') { // PGRST116 = not found
         const pendingUsername = requestUrl.searchParams.get('username') || 
                                session.user.email?.split('@')[0] || 
                                'player'
         
-        // DETAILED DEBUGGING
-        console.log('=== DEBUG INFO ===')
-        console.log('Session User ID:', session.user.id)
-        console.log('Session User ID Type:', typeof session.user.id)
-        console.log('Session User Email:', session.user.email)
-        console.log('Pending Username:', pendingUsername)
-        console.log('Profile check result:', { profile, profileError })
+        console.log('Creating new user profile for:', session.user.email)
         
         // Check if user already exists by email
         const { data: existingByEmail, error: emailCheckError } = await supabase
           .from('user_profiles')
           .select('id')
           .eq('email', session.user.email)
-          .single()
-        
-        console.log('Email check result:', { existingByEmail, emailCheckError })
+          .maybeSingle() // Use maybeSingle instead of single
         
         if (existingByEmail) {
           console.log('User already exists with this email')
@@ -70,37 +63,45 @@ export async function GET(request: Request) {
         } else {
           console.log('Attempting to insert new user...')
           
-          // Try to insert new user
-          const { data: insertData, error: insertError } = await supabase.from('user_profiles').insert({
-            id: session.user.id,
-            email: session.user.email,
-            username: pendingUsername
-          })
-          
-          console.log('Insert result:', { insertData, insertError })
+          // ✅ FIXED: Insert with all required fields and proper defaults
+          const { data: insertData, error: insertError } = await supabase
+            .from('user_profiles')
+            .insert({
+              id: session.user.id,
+              email: session.user.email,
+              username: pendingUsername,
+              token_balance: 1, // ✅ Give new users a token
+              lifetime_tokens_earned: 1, // ✅ They earned their first token
+              is_verified: true, // ✅ They verified their email via magic link
+              favorite_sport: 'MLB', // ✅ Set default sport (handle enum properly)
+              notification_preferences: { push: true, email: true } // ✅ Set default notifications
+            })
           
           if (insertError) {
-            console.error('=== DETAILED INSERT ERROR ===')
-            console.error('Error message:', insertError.message)
-            console.error('Error code:', insertError.code)
-            console.error('Error details:', insertError.details)
-            console.error('Error hint:', insertError.hint)
-            console.error('Full error object:', JSON.stringify(insertError, null, 2))
+            console.error('Insert error:', insertError)
             
-            if (insertError.message.includes('username')) {
+            if (insertError.message.includes('username') || insertError.code === '23505') {
               console.log('Username conflict detected, generating unique username...')
               const uniqueUsername = `${pendingUsername}${Math.floor(Math.random() * 1000)}`
-              console.log('Retry with username:', uniqueUsername)
               
-              const { error: retryError } = await supabase.from('user_profiles').insert({
-                id: session.user.id,
-                email: session.user.email,
-                username: uniqueUsername
-              })
+              const { error: retryError } = await supabase
+                .from('user_profiles')
+                .insert({
+                  id: session.user.id,
+                  email: session.user.email,
+                  username: uniqueUsername,
+                  token_balance: 1,
+                  lifetime_tokens_earned: 1,
+                  is_verified: true,
+                  favorite_sport: 'MLB',
+                  notification_preferences: { push: true, email: true }
+                })
               
               if (retryError) {
                 console.error('Retry insert error:', retryError)
                 return NextResponse.redirect(new URL('/?error=database&details=' + encodeURIComponent(retryError.message), requestUrl.origin))
+              } else {
+                console.log('✅ User created successfully with unique username!')
               }
             } else {
               return NextResponse.redirect(new URL('/?error=database&details=' + encodeURIComponent(insertError.message), requestUrl.origin))
@@ -109,10 +110,14 @@ export async function GET(request: Request) {
             console.log('✅ User created successfully!')
           }
         }
+      } else if (profile) {
+        console.log('User profile already exists')
+      } else if (profileError) {
+        console.error('Error checking for existing profile:', profileError)
       }
       
       // Redirect to home with success flag
-      return NextResponse.redirect(new URL('/?welcome=true', requestUrl.origin))
+      return NextResponse.redirect(new URL('/?verified=true', requestUrl.origin))
     }
   }
   
