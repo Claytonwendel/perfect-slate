@@ -32,11 +32,18 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
     try {
       if (mode === 'signup') {
         // Check if username is taken
-        const { data: existingUser } = await supabase
+        const { data: existingUser, error: usernameError } = await supabase
           .from('users')
           .select('id')
           .eq('username', username)
           .maybeSingle()
+
+        if (usernameError) {
+          console.error('Username check error:', usernameError)
+          setError('Database error: ' + usernameError.message)
+          setLoading(false)
+          return
+        }
 
         if (existingUser) {
           setError('Username already taken')
