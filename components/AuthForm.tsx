@@ -33,7 +33,7 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
       if (mode === 'signup') {
         // Check if username is taken
         const { data: existingUser, error: usernameError } = await supabase
-          .from('users')
+          .from('user_profiles')
           .select('id')
           .eq('username', username)
           .maybeSingle()
