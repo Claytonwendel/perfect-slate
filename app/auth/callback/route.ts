@@ -34,81 +34,99 @@ export async function GET(request: Request) {
     }
     
     if (!error && session) {
-      // User is now logged in!
-      // Check if profile exists
-      const { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('id')
-        .eq('id', session.user.id)
-        .maybeSingle()
+      console.log('🎯 AUTH SUCCESS - User logged in:', session.user.email)
       
-      // Only create profile if it doesn't exist
-      if (!profile) {
-        const pendingUsername = requestUrl.searchParams.get('username') || 
-                               session.user.email?.split('@')[0] || 
-                               'player'
+      try {
+        // Check if profile exists
+        console.log('🔍 Checking if profile exists for user:', session.user.id)
         
-        console.log('Creating new user profile for:', session.user.email)
-        
-        // Check if user already exists by email
-        const { data: existingByEmail } = await supabase
+        const { data: profile, error: profileError } = await supabase
           .from('user_profiles')
           .select('id')
-          .eq('email', session.user.email)
+          .eq('id', session.user.id)
           .maybeSingle()
         
-        if (existingByEmail) {
-          console.log('User already exists with this email')
-        } else {
-          console.log('Attempting to insert new user...')
+        console.log('📋 Profile check result:', { profile, profileError })
+        
+        if (!profile) {
+          const pendingUsername = requestUrl.searchParams.get('username') || 
+                                 session.user.email?.split('@')[0] || 
+                                 'player'
           
-          // ✅ MINIMAL INSERT - Only required fields, let defaults handle the rest
+          console.log('👤 Creating new profile with username:', pendingUsername)
+          
+          // 🚨 HARDCORE DEBUGGING - Try the simplest possible insert
+          console.log('💾 Attempting database insert...')
+          console.log('Data to insert:', {
+            id: session.user.id,
+            email: session.user.email,
+            username: pendingUsername
+          })
+          
           const { data: insertData, error: insertError } = await supabase
             .from('user_profiles')
             .insert({
               id: session.user.id,
               email: session.user.email,
               username: pendingUsername
-              // ❌ REMOVED ALL OTHER FIELDS - let database defaults handle them
             })
+            .select() // Add select to see what was actually inserted
+          
+          console.log('📊 Insert result data:', insertData)
+          console.log('❌ Insert error (if any):', insertError)
           
           if (insertError) {
-            console.error('Insert error:', insertError)
+            console.error('🚨 FULL ERROR DETAILS:')
+            console.error('Message:', insertError.message)
+            console.error('Code:', insertError.code)
+            console.error('Details:', insertError.details)
+            console.error('Hint:', insertError.hint)
             
+            // Try username conflict fix
             if (insertError.message.includes('username') || insertError.code === '23505') {
-              console.log('Username conflict, trying with unique username...')
-              const uniqueUsername = `${pendingUsername}${Math.floor(Math.random() * 1000)}`
+              const uniqueUsername = `${pendingUsername}${Date.now()}`
+              console.log('🔄 Retrying with unique username:', uniqueUsername)
               
-              const { error: retryError } = await supabase
+              const { data: retryData, error: retryError } = await supabase
                 .from('user_profiles')
                 .insert({
                   id: session.user.id,
                   email: session.user.email,
                   username: uniqueUsername
                 })
+                .select()
+              
+              console.log('🔄 Retry result:', { retryData, retryError })
               
               if (retryError) {
-                console.error('Retry failed:', retryError)
-                return NextResponse.redirect(new URL('/?error=database&details=' + encodeURIComponent(retryError.message), requestUrl.origin))
+                console.error('💀 RETRY ALSO FAILED:', retryError)
+                return NextResponse.redirect(new URL(`/?error=retry_failed&msg=${encodeURIComponent(retryError.message)}`, requestUrl.origin))
               } else {
-                console.log('✅ User created with unique username!')
+                console.log('✅ SUCCESS on retry!')
               }
             } else {
-              return NextResponse.redirect(new URL('/?error=database&details=' + encodeURIComponent(insertError.message), requestUrl.origin))
+              // Return the actual error details in URL
+              return NextResponse.redirect(new URL(`/?error=insert_failed&msg=${encodeURIComponent(insertError.message)}&code=${insertError.code}`, requestUrl.origin))
             }
           } else {
-            console.log('✅ User created successfully!')
+            console.log('✅ SUCCESS on first try!', insertData)
           }
+        } else {
+          console.log('👍 Profile already exists')
         }
-      } else {
-        console.log('User profile already exists')
+        
+        return NextResponse.redirect(new URL('/?success=true', requestUrl.origin))
+        
+      } catch (catchError: any) {
+        console.error('💥 CAUGHT EXCEPTION:', catchError)
+        return NextResponse.redirect(new URL(`/?error=exception&msg=${encodeURIComponent(catchError.message)}`, requestUrl.origin))
       }
-      
-      // Redirect to home with success flag
-      return NextResponse.redirect(new URL('/?verified=true', requestUrl.origin))
+    } else {
+      console.error('🚫 AUTH FAILED:', error)
+      return NextResponse.redirect(new URL(`/?error=auth_failed&msg=${encodeURIComponent(error?.message || 'Unknown auth error')}`, requestUrl.origin))
     }
   }
   
-  // Something went wrong
-  return NextResponse.redirect(new URL('/?error=auth', requestUrl.origin))
+  console.error('🚫 NO CODE OR TOKEN PROVIDED')
+  return NextResponse.redirect(new URL('/?error=no_auth_params', requestUrl.origin))
 }
