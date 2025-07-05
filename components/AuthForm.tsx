@@ -1,4 +1,4 @@
-// components/AuthForm.tsx
+// components/AuthForm.tsx - FIXED VERSION
 'use client'
 
 import { useState } from 'react'
@@ -52,11 +52,13 @@ export default function AuthForm({ mode, onModeChange, onSuccess }: AuthFormProp
         }
       }
 
-      // Create redirect URL with username for signup
+      // Create redirect URL with username for signup - FIXED TO USE CALLBACK ROUTE
       let redirectUrl = `${window.location.origin}/auth/callback`
       if (mode === 'signup' && username) {
         redirectUrl += `?username=${encodeURIComponent(username)}`
       }
+
+      console.log('🔗 Using redirect URL:', redirectUrl)
 
       // Send magic link
       const { error } = await supabase.auth.signInWithOtp({
