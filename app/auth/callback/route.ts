@@ -1,4 +1,4 @@
-// app/auth/callback/route.ts - DEBUG VERSION
+// app/auth/callback/route.ts - HANDLES BOTH CODE AND FRAGMENT FORMATS
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
@@ -13,49 +13,94 @@ export async function GET(request: Request) {
   console.log('📝 Code:', code ? 'EXISTS' : 'MISSING')
   console.log('📝 Username:', username)
   
-  if (code) {
-    try {
-      const cookieStore = cookies()
-      const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+  try {
+    const cookieStore = cookies()
+    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    
+    let session = null
+    let error = null
+    
+    if (code) {
+      console.log('🔄 Using code exchange method...')
+      // New method: Exchange code for session
+      const result = await supabase.auth.exchangeCodeForSession(code)
+      session = result.data.session
+      error = result.error
+    } else {
+      console.log('🔄 No code found, checking for existing session...')
+      // Fallback: Check if there's already a session (from URL fragments)
+      const result = await supabase.auth.getSession()
+      session = result.data.session
+      error = result.error
       
-      console.log('🔄 Exchanging code for session...')
-      
-      // Exchange code for session
-      const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-      
-      if (error) {
-        console.error('❌ Auth exchange error:', error)
-        return NextResponse.redirect(new URL('/?error=auth_exchange', requestUrl.origin))
+      if (!session) {
+        console.log('🔄 No session found, will let frontend handle URL fragments')
+        // Let the frontend handle URL fragments, just redirect with a special flag
+        return NextResponse.redirect(new URL('/?auth=fragment', requestUrl.origin))
       }
+    }
+    
+    if (error) {
+      console.error('❌ Auth error:', error)
+      return NextResponse.redirect(new URL('/?error=auth_error', requestUrl.origin))
+    }
+    
+    if (!session) {
+      console.error('❌ No session returned')
+      return NextResponse.redirect(new URL('/?error=no_session', requestUrl.origin))
+    }
+    
+    console.log('✅ Session created for:', session.user.email)
+    
+    // Check if profile exists
+    const { data: profile, error: profileError } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .eq('id', session.user.id)
+      .maybeSingle()
+    
+    console.log('👤 Profile check:', profile ? 'EXISTS' : 'MISSING')
+    
+    // Create profile if it doesn't exist
+    if (!profile) {
+      console.log('🔄 Creating user profile...')
       
-      if (!data.session) {
-        console.error('❌ No session returned')
-        return NextResponse.redirect(new URL('/?error=no_session', requestUrl.origin))
-      }
+      const profileUsername = username || 
+                             session.user.email?.split('@')[0] || 
+                             'player'
       
-      console.log('✅ Session created for:', data.session.user.email)
+      console.log('📝 Using username:', profileUsername)
       
-      // Check if profile exists
-      const { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('id')
-        .eq('id', data.session.user.id)
-        .maybeSingle()
+      const { error: insertError } = await supabase.from('user_profiles').insert({
+        id: session.user.id,
+        email: session.user.email,
+        username: profileUsername,
+        token_balance: 1,
+        lifetime_tokens_earned: 1,
+        is_verified: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        total_earnings: 0,
+        perfect_slates: 0,
+        total_slates_submitted: 0,
+        win_percentage: 0,
+        current_streak: 0,
+        longest_streak: 0,
+        lifetime_tokens_used: 0,
+        is_active: true,
+        favorite_sport: 'MLB'
+      })
       
-      console.log('👤 Profile check:', profile ? 'EXISTS' : 'MISSING')
-      
-      // Create profile if it doesn't exist
-      if (!profile) {
-        console.log('🔄 Creating user profile...')
+      if (insertError) {
+        console.error('❌ Profile creation error:', insertError)
+        // Try with unique username
+        const uniqueUsername = `${profileUsername}${Date.now()}`
+        console.log('🔄 Retrying with unique username:', uniqueUsername)
         
-        const profileUsername = username || 
-                               data.session.user.email?.split('@')[0] || 
-                               'player'
-        
-        const { error: insertError } = await supabase.from('user_profiles').insert({
-          id: data.session.user.id,
-          email: data.session.user.email,
-          username: profileUsername,
+        await supabase.from('user_profiles').insert({
+          id: session.user.id,
+          email: session.user.email,
+          username: uniqueUsername,
           token_balance: 1,
           lifetime_tokens_earned: 1,
           is_verified: true,
@@ -71,47 +116,18 @@ export async function GET(request: Request) {
           is_active: true,
           favorite_sport: 'MLB'
         })
-        
-        if (insertError) {
-          console.error('❌ Profile creation error:', insertError)
-          // Try with unique username
-          const uniqueUsername = `${profileUsername}${Date.now()}`
-          await supabase.from('user_profiles').insert({
-            id: data.session.user.id,
-            email: data.session.user.email,
-            username: uniqueUsername,
-            token_balance: 1,
-            lifetime_tokens_earned: 1,
-            is_verified: true,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            total_earnings: 0,
-            perfect_slates: 0,
-            total_slates_submitted: 0,
-            win_percentage: 0,
-            current_streak: 0,
-            longest_streak: 0,
-            lifetime_tokens_used: 0,
-            is_active: true,
-            favorite_sport: 'MLB'
-          })
-        }
-        
-        console.log('✅ Profile created')
       }
       
-      console.log('🔄 Redirecting to home with verified=true')
-      
-      // Redirect to home with success flag
-      return NextResponse.redirect(new URL('/?verified=true', requestUrl.origin))
-      
-    } catch (error) {
-      console.error('❌ Callback error:', error)
-      return NextResponse.redirect(new URL('/?error=callback_exception', requestUrl.origin))
+      console.log('✅ Profile created')
     }
+    
+    console.log('🔄 Redirecting to home with verified=true')
+    
+    // Redirect to home with success flag
+    return NextResponse.redirect(new URL('/?verified=true', requestUrl.origin))
+    
+  } catch (error) {
+    console.error('❌ Callback error:', error)
+    return NextResponse.redirect(new URL('/?error=callback_exception', requestUrl.origin))
   }
-  
-  console.log('❌ No code parameter found')
-  // No code parameter
-  return NextResponse.redirect(new URL('/?error=no_code', requestUrl.origin))
 }
