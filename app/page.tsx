@@ -169,51 +169,58 @@ export default function PerfectSlateGame() {
 
   // Fetch initial data
   useEffect(() => {
-    // Check for magic link fragments FIRST
-    const hash = window.location.hash
-    if (hash.includes('access_token=')) {
-      console.log('🪄 Magic link detected in URL fragments')
-      // Let Supabase handle the session from URL fragments
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
-          console.log('✅ Session established from magic link')
-          checkUser()
-        }
-        // Clean up URL
-        window.history.replaceState({}, document.title, window.location.pathname + '?verified=true')
-        setShowVerificationSuccess(true)
-      })
-    } else {
-      // Normal flow - check for verification success from callback
+    // Handle auth state changes and URL parameters
+    const handleAuthFlow = async () => {
+      // Check for URL parameters first
       const urlParams = new URLSearchParams(window.location.search)
       const verified = urlParams.get('verified')
       const error = urlParams.get('error')
       
       if (verified === 'true') {
+        console.log('✅ User returned from email verification')
         setShowVerificationSuccess(true)
         // Clean up URL
         window.history.replaceState({}, document.title, window.location.pathname)
       }
       
       if (error === 'auth') {
-        console.error('Authentication error')
+        console.error('❌ Authentication error')
       }
       
-      checkUser()
+      // Get current session
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        console.log('✅ Session found:', session.user.email)
+        setUser(session.user)
+        await loadUserProfile(session.user.id)
+      } else {
+        console.log('❌ No session found')
+      }
+      
+      // Load contest data regardless
+      loadContestData()
     }
-    
-    loadContestData()
+
+    handleAuthFlow()
     
     // Listen for auth state changes
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event)
+      console.log('🔄 Auth state changed:', event, session?.user?.email)
+      
       if (event === 'SIGNED_IN' && session) {
-        await checkUser()
-        setShowVerificationSuccess(true)
+        setUser(session.user)
+        await loadUserProfile(session.user.id)
+        if (!showVerificationSuccess) {
+          setShowVerificationSuccess(true)
+        }
       }
+      
       if (event === 'SIGNED_OUT') {
         setUser(null)
         setTokenBalance(0)
+        setSelectedPicks([])
+        setGamesWithTokens(new Set())
+        setIsSubmitted(false)
       }
     })
     
@@ -240,30 +247,26 @@ export default function PerfectSlateGame() {
     return () => clearInterval(scoreInterval)
   }, [games])
 
-  const checkUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      setUser(user)
-      
-      // Check if user profile exists
+  const loadUserProfile = async (userId: string) => {
+    try {
       const { data: userData, error } = await supabase
         .from('user_profiles')
         .select('token_balance')
-        .eq('id', user.id)
+        .eq('id', userId)
         .single()
       
       if (error && error.code === 'PGRST116') {
         // Profile doesn't exist, create it
         console.log('Creating user profile...')
         const { error: createError } = await supabase
-          .rpc('create_profile_for_user', { user_id: user.id })
+          .rpc('create_profile_for_user', { user_id: userId })
         
         if (!createError) {
           // Try again to get the token balance
           const { data: newUserData } = await supabase
             .from('user_profiles')
             .select('token_balance')
-            .eq('id', user.id)
+            .eq('id', userId)
             .single()
           
           if (newUserData) {
@@ -273,6 +276,16 @@ export default function PerfectSlateGame() {
       } else if (userData) {
         setTokenBalance(userData.token_balance)
       }
+    } catch (error) {
+      console.error('Error loading user profile:', error)
+    }
+  }
+
+  const checkUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      setUser(user)
+      await loadUserProfile(user.id)
     }
   }
 
