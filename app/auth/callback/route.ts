@@ -34,7 +34,42 @@ export async function GET(request: Request) {
     }
     
     if (!error && session) {
-      // User is now logged in - the handle_email_confirmed trigger should have created their profile
+      // Check if profile exists (in case trigger didn't fire)
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('id', session.user.id)
+        .maybeSingle()
+      
+      // Create profile if it doesn't exist
+      if (!profile) {
+        const username = requestUrl.searchParams.get('username') || 
+                        session.user.email?.split('@')[0] || 
+                        'player'
+        
+        try {
+          await supabase.from('user_profiles').insert({
+            id: session.user.id,
+            email: session.user.email,
+            username: username,
+            token_balance: 1,
+            lifetime_tokens_earned: 1,
+            is_verified: true
+          })
+        } catch (insertError) {
+          // If username conflict, try with unique username
+          const uniqueUsername = `${username}${Date.now()}`
+          await supabase.from('user_profiles').insert({
+            id: session.user.id,
+            email: session.user.email,
+            username: uniqueUsername,
+            token_balance: 1,
+            lifetime_tokens_earned: 1,
+            is_verified: true
+          })
+        }
+      }
+      
       // Redirect to home with success flag
       return NextResponse.redirect(new URL('/?verified=true', requestUrl.origin))
     } else {
