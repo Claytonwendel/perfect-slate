@@ -169,31 +169,47 @@ export default function PerfectSlateGame() {
 
   // Fetch initial data
   useEffect(() => {
+    // Check for magic link fragments FIRST
+    const hash = window.location.hash
+    if (hash.includes('access_token=')) {
+      console.log('🪄 Magic link detected in URL fragments')
+      // Let Supabase handle the session from URL fragments
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          console.log('✅ Session established from magic link')
+          checkUser()
+        }
+        // Clean up URL
+        window.history.replaceState({}, document.title, window.location.pathname + '?verified=true')
+        setShowVerificationSuccess(true)
+      })
+    } else {
+      // Normal flow - check for verification success from callback
+      const urlParams = new URLSearchParams(window.location.search)
+      const verified = urlParams.get('verified')
+      const error = urlParams.get('error')
+      
+      if (verified === 'true') {
+        setShowVerificationSuccess(true)
+        // Clean up URL
+        window.history.replaceState({}, document.title, window.location.pathname)
+      }
+      
+      if (error === 'auth') {
+        console.error('Authentication error')
+      }
+      
+      checkUser()
+    }
+    
     loadContestData()
-    
-    // Check for verification success
-    const urlParams = new URLSearchParams(window.location.search)
-    const verified = urlParams.get('verified')
-    const error = urlParams.get('error')
-    
-    if (verified === 'true') {
-      setShowVerificationSuccess(true)
-      // Clean up URL
-      window.history.replaceState({}, document.title, window.location.pathname)
-    }
-    
-    if (error === 'auth') {
-      // Handle auth error
-      console.error('Authentication error')
-    }
-    
-    checkUser()
     
     // Listen for auth state changes
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state changed:', event)
       if (event === 'SIGNED_IN' && session) {
         await checkUser()
+        setShowVerificationSuccess(true)
       }
       if (event === 'SIGNED_OUT') {
         setUser(null)
