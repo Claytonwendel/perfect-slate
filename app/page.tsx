@@ -121,23 +121,11 @@ const TokenIcon = ({ className }: { className?: string }) => (
   </svg>
 )
 
-// Helper function to apply no-tie logic
-const applyNoTieLogic = (value: number, isUnder: boolean = false): number => {
-  // For spreads: add 0.5 to underdogs, subtract 0.5 from favorites
-  // For totals: add 0.5 to overs, subtract 0.5 from unders
-  if (isUnder) {
-    // For under bets, we subtract 0.5
-    return Math.floor(value) === value ? value - 0.5 : value
-  } else {
-    // For over bets and positive spreads (underdogs), we add 0.5
-    // For negative spreads (favorites), we subtract 0.5
-    if (value > 0) {
-      return Math.floor(value) === value ? value + 0.5 : value
-    } else if (value < 0) {
-      return Math.floor(value) === value ? value - 0.5 : value
-    }
-    return value
-  }
+// FIXED: Helper function to apply no-tie logic - Only ADD 0.5, never subtract
+const applyNoTieLogic = (value: number): number => {
+  // Only ADD 0.5 to whole numbers, never subtract
+  // Examples: 7 becomes 7.5, 7.5 stays 7.5
+  return Math.floor(value) === value ? value + 0.5 : value
 }
 
 export default function PerfectSlateGame() {
@@ -175,6 +163,37 @@ export default function PerfectSlateGame() {
       const urlParams = new URLSearchParams(window.location.search)
       const verified = urlParams.get('verified')
       const error = urlParams.get('error')
+      const authType = urlParams.get('auth')
+      
+      // Handle the special case where callback sends us back to handle URL fragments
+      if (authType === 'fragment') {
+        console.log('🔄 Handling URL fragments from callback...')
+        // Check for tokens in URL fragments (hash)
+        const hash = window.location.hash
+        if (hash.includes('access_token=')) {
+          console.log('🪄 Token found in URL fragments, processing...')
+          
+          try {
+            // Get the session (Supabase should automatically handle the fragments)
+            const { data, error } = await supabase.auth.getSession()
+            
+            if (data.session) {
+              console.log('✅ Session established from URL fragments')
+              setUser(data.session.user)
+              await loadUserProfile(data.session.user.id)
+              setShowVerificationSuccess(true)
+              // Clean up URL
+              window.history.replaceState({}, document.title, window.location.pathname + '?verified=true')
+            } else if (error) {
+              console.error('❌ Error processing URL fragments:', error)
+            }
+          } catch (err) {
+            console.error('❌ Fragment processing error:', err)
+          }
+        }
+        loadContestData()
+        return
+      }
       
       if (verified === 'true') {
         console.log('✅ User returned from email verification')
@@ -183,8 +202,8 @@ export default function PerfectSlateGame() {
         window.history.replaceState({}, document.title, window.location.pathname)
       }
       
-      if (error === 'auth') {
-        console.error('❌ Authentication error')
+      if (error) {
+        console.error('❌ Authentication error:', error)
       }
       
       // Get current session
@@ -197,7 +216,7 @@ export default function PerfectSlateGame() {
         console.log('❌ No session found')
       }
       
-      // Load contest data regardless
+      // Load contest data
       loadContestData()
     }
 
@@ -287,15 +306,6 @@ export default function PerfectSlateGame() {
       setUser(user)
       await loadUserProfile(user.id)
     }
-  }
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    setUser(null)
-    setTokenBalance(0)
-    setSelectedPicks([])
-    setGamesWithTokens(new Set())
-    setIsSubmitted(false)
   }
 
   const loadContestData = async () => {
@@ -497,7 +507,7 @@ export default function PerfectSlateGame() {
     const isGameDisabled = hasToken || isSubmitted || !isAvailable || contestStatus !== 'active'
     const isGameStarted = game.status === 'in_progress' || game.status === 'final'
     
-    // Calculate pick percentages ONLY ONCE
+    // Calculate pick percentages
     const totalSpreadPicks = (homeSpread?.times_selected || 0) + (awaySpread?.times_selected || 0)
     const totalTotalPicks = (overTotal?.times_selected || 0) + (underTotal?.times_selected || 0)
     
@@ -506,24 +516,32 @@ export default function PerfectSlateGame() {
     const overPct = totalTotalPicks > 0 ? Math.round((overTotal?.times_selected || 0) / totalTotalPicks * 100) : 50
     const underPct = totalTotalPicks > 0 ? Math.round((underTotal?.times_selected || 0) / totalTotalPicks * 100) : 50
     
+    // Find most popular picks for closed games
+    const mostPopularSpread = homeSpreadPct >= awaySpreadPct ? 
+      { text: `${game.home_team_short || getCityName(game.home_team)} ${game.home_spread > 0 ? '+' : ''}${applyNoTieLogic(game.home_spread)}`, pct: homeSpreadPct } :
+      { text: `${game.away_team_short || getCityName(game.away_team)} ${game.away_spread > 0 ? '+' : ''}${applyNoTieLogic(game.away_spread)}`, pct: awaySpreadPct }
+    
+    const mostPopularTotal = overPct >= underPct ?
+      { text: `Over ${applyNoTieLogic(game.total_points)}`, pct: overPct } :
+      { text: `Under ${applyNoTieLogic(game.total_points)}`, pct: underPct }
+    
     // Get city names
     const homeCity = getCityName(game.home_team)
     const awayCity = getCityName(game.away_team)
     
-    // Apply no-tie logic to spreads and totals
+    // Apply no-tie logic to displays
     const homeSpreadDisplay = applyNoTieLogic(game.home_spread)
     const awaySpreadDisplay = applyNoTieLogic(game.away_spread)
-    const overDisplay = applyNoTieLogic(game.total_points)
-    const underDisplay = applyNoTieLogic(game.total_points, true)
+    const totalDisplay = applyNoTieLogic(game.total_points)
     
     return (
       <div className={`bg-white rounded-2xl p-4 md:p-6 shadow-lg border-4 ${
         hasToken ? 'border-yellow-400 bg-yellow-50' : 
-        !isAvailable ? 'border-gray-400 bg-gray-50 opacity-75' : 
+        !isAvailable ? 'border-gray-400 bg-gray-50' : 
         'border-gray-200'
       } hover:shadow-xl transition-all duration-300 relative`}>
         
-        {/* Token Button in top right */}
+        {/* Token Button in top right - only show for available games */}
         {isAvailable && contestStatus === 'active' && (
           <div className="absolute top-4 right-4">
             <button
@@ -603,10 +621,10 @@ export default function PerfectSlateGame() {
           )}
         </div>
         
-        {/* Picks Grid - Show odds if game hasn't started and is available */}
-        {!isGameStarted && isAvailable && (
+        {/* Picks Grid - Show interactive picks if available, popular picks if closed */}
+        {!isGameStarted && isAvailable ? (
           <div className="space-y-3 md:space-y-4">
-            {/* Spread */}
+            {/* Interactive Spread */}
             <div>
               <div className="text-center text-xs font-bold text-gray-500 mb-2 pixel-font">SPREAD</div>
               <div className="grid grid-cols-2 gap-2 md:gap-3">
@@ -633,25 +651,25 @@ export default function PerfectSlateGame() {
               </div>
             </div>
             
-            {/* Total */}
+            {/* Interactive Total */}
             <div>
               <div className="text-center text-xs font-bold text-gray-500 mb-2 pixel-font">{game.sport === 'MLB' ? 'TOTAL RUNS' : 'TOTAL POINTS'}</div>
               <div className="grid grid-cols-2 gap-2 md:gap-3">
                 <PickButton
-                  text={`Over ${overDisplay}`}
+                  text={`Over ${totalDisplay}`}
                   isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'total' && p.selection === 'over')}
                   onClick={() => handlePickSelect(game.id, 'total', 'over',
-                    `Over ${overDisplay}`,
+                    `Over ${totalDisplay}`,
                     overTotal!.id
                   )}
                   disabled={isGameDisabled}
                   percentage={overPct}
                 />
                 <PickButton
-                  text={`Under ${underDisplay}`}
+                  text={`Under ${totalDisplay}`}
                   isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'total' && p.selection === 'under')}
                   onClick={() => handlePickSelect(game.id, 'total', 'under',
-                    `Under ${underDisplay}`,
+                    `Under ${totalDisplay}`,
                     underTotal!.id
                   )}
                   disabled={isGameDisabled}
@@ -660,14 +678,26 @@ export default function PerfectSlateGame() {
               </div>
             </div>
           </div>
-        )}
-        
-        {/* Game Unavailable Message */}
-        {!isAvailable && !isGameStarted && (
-          <div className="text-center py-4">
-            <span className="text-sm pixel-font text-gray-500">
-              GAME LOCKED
-            </span>
+        ) : (
+          /* Show popular picks for closed games */
+          <div className="space-y-4">
+            <div className="text-center">
+              <div className="text-sm font-bold pixel-font text-gray-700 mb-3">MOST POPULAR PICKS</div>
+              <div className="space-y-2">
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-3">
+                  <div className="text-sm font-bold pixel-font text-blue-800">
+                    {mostPopularSpread.text} ({mostPopularSpread.pct}%)
+                  </div>
+                  <div className="text-xs pixel-font text-blue-600">SPREAD FAVORITE</div>
+                </div>
+                <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-3">
+                  <div className="text-sm font-bold pixel-font text-purple-800">
+                    {mostPopularTotal.text} ({mostPopularTotal.pct}%)
+                  </div>
+                  <div className="text-xs pixel-font text-purple-600">TOTAL FAVORITE</div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
         
@@ -794,7 +824,7 @@ export default function PerfectSlateGame() {
               )}
             </div>
             
-            {/* Desktop Nav Links */}
+            {/* FIXED: Desktop Nav Links - Removed Sign Out */}
             <div className="hidden md:flex items-center space-x-6">
               <button className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center space-x-2">
                 <FileText className="w-4 h-4" />
@@ -805,22 +835,13 @@ export default function PerfectSlateGame() {
                 <span>LEADERBOARDS</span>
               </button>
               {user ? (
-                <div className="flex items-center space-x-4">
-                  <button 
-                    onClick={() => router.push('/profile')}
-                    className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center space-x-2"
-                  >
-                    <User className="w-4 h-4" />
-                    <span>PROFILE</span>
-                  </button>
-                  <button 
-                    onClick={handleSignOut}
-                    className="text-white pixel-font text-sm hover:text-red-300 transition-colors flex items-center space-x-2"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    <span>SIGN OUT</span>
-                  </button>
-                </div>
+                <button 
+                  onClick={() => router.push('/profile')}
+                  className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center space-x-2"
+                >
+                  <User className="w-4 h-4" />
+                  <span>PROFILE</span>
+                </button>
               ) : (
                 <button 
                   onClick={() => {
@@ -844,7 +865,7 @@ export default function PerfectSlateGame() {
             </button>
           </div>
           
-          {/* Mobile Menu */}
+          {/* FIXED: Mobile Menu - Removed Sign Out */}
           {showMobileMenu && (
             <div className="md:hidden mt-4 pb-4 border-t border-blue-300 pt-4">
               <button className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">
@@ -854,23 +875,15 @@ export default function PerfectSlateGame() {
                 LEADERBOARDS
               </button>
               {user ? (
-                <>
-                  <button 
-                    onClick={() => {
-                      router.push('/profile')
-                      setShowMobileMenu(false)
-                    }}
-                    className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors"
-                  >
-                    PROFILE
-                  </button>
-                  <button 
-                    onClick={handleSignOut}
-                    className="block w-full text-left text-red-300 pixel-font text-sm py-2 hover:text-red-400 transition-colors"
-                  >
-                    SIGN OUT
-                  </button>
-                </>
+                <button 
+                  onClick={() => {
+                    router.push('/profile')
+                    setShowMobileMenu(false)
+                  }}
+                  className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors"
+                >
+                  PROFILE
+                </button>
               ) : (
                 <button 
                   onClick={() => {
