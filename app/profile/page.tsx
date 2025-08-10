@@ -396,7 +396,7 @@ export default function ProfilePage() {
               />
               <ClickableStatCard
                 icon={<Target className="w-6 h-6 text-blue-600" />}
-                label="Total Slates"
+                label="Past Slates"
                 value={profile.total_slates_submitted.toString()}
                 color="blue"
                 onClick={() => setShowTotalSlatesModal(true)}
@@ -592,26 +592,19 @@ export default function ProfilePage() {
         </Modal>
       )}
 
-      {/* Total Slates Modal */}
+      {/* Total Slates Modal - Now shows all past slates */}
       {showTotalSlatesModal && (
-        <Modal title="TOTAL SLATES" onClose={() => setShowTotalSlatesModal(false)}>
+        <Modal title="PAST SLATES" onClose={() => setShowTotalSlatesModal(false)}>
           <div className="space-y-4">
             <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4">
-              <h4 className="font-bold pixel-font text-blue-800 mb-2">Token Milestones</h4>
+              <h4 className="font-bold pixel-font text-blue-800 mb-2">Slate History & Token Progress</h4>
               <div className="space-y-2 text-sm pixel-font text-blue-700">
                 <p>• Every 30 slates = 1 token</p>
                 <p>• Every 100 slates = 2 bonus tokens</p>
               </div>
             </div>
             
-            <div className="text-center py-6">
-              <Target className="w-16 h-16 mx-auto text-blue-500 mb-4" />
-              <p className="pixel-font text-2xl font-bold text-gray-800 mb-2">
-                {profile.total_slates_submitted}
-              </p>
-              <p className="pixel-font text-sm text-gray-600">Total Slates Submitted</p>
-            </div>
-            
+            {/* Token Progress */}
             <div className="bg-gray-50 rounded-lg p-4">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm pixel-font text-gray-700">Progress to Next Token</span>
@@ -628,6 +621,92 @@ export default function ProfilePage() {
               </p>
             </div>
             
+            {/* All Submissions History */}
+            <div>
+              <h4 className="font-bold pixel-font text-gray-800 mb-3">All Submissions ({allSubmissions.length})</h4>
+              {allSubmissions.length > 0 ? (
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {allSubmissions.map(submission => {
+                    const isActive = !submission.is_finalized
+                    const isPerfect = submission.is_perfect && submission.is_finalized
+                    const isBadBeat = submission.is_finalized && 
+                      (submission.correct_picks === 8 || submission.correct_picks === 9) && 
+                      !submission.is_perfect
+                    
+                    return (
+                      <div key={submission.id} className="bg-white border-2 border-gray-200 rounded-lg p-3">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <div className="font-bold pixel-font text-sm">
+                              {submission.contest?.sport || 'Contest'} - Week {submission.contest?.week_number}
+                            </div>
+                            <div className="text-xs pixel-font text-gray-600">
+                              {new Date(submission.submitted_at).toLocaleDateString()} at {new Date(submission.submitted_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </div>
+                          </div>
+                          <div className={`px-2 py-1 rounded text-xs pixel-font font-bold ${
+                            isActive ? 'bg-yellow-100 text-yellow-800' :
+                            isPerfect ? 'bg-green-100 text-green-800' :
+                            isBadBeat ? 'bg-orange-100 text-orange-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {isActive ? 'ACTIVE' :
+                             isPerfect ? 'PERFECT!' :
+                             isBadBeat ? 'BAD BEAT' :
+                             `${submission.correct_picks}/${submission.total_picks}`}
+                          </div>
+                        </div>
+                        
+                        <div className="flex justify-between items-center text-xs pixel-font">
+                          <div className="text-gray-600">
+                            <span>Picks: {submission.total_picks - submission.tokens_used}</span>
+                            {submission.tokens_used > 0 && (
+                              <span className="ml-2">• Tokens: {submission.tokens_used}</span>
+                            )}
+                          </div>
+                          
+                          {submission.is_finalized && (
+                            <div className="flex items-center space-x-2">
+                              {submission.payout_amount > 0 && (
+                                <span className="text-green-600 font-bold">+${submission.payout_amount}</span>
+                              )}
+                              {isPerfect && <Trophy className="w-3 h-3 text-yellow-500" />}
+                              {isBadBeat && <AlertTriangle className="w-3 h-3 text-orange-500" />}
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Progress bar for finalized slates */}
+                        {submission.is_finalized && submission.total_picks > 0 && (
+                          <div className="mt-2">
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div 
+                                className={`h-2 rounded-full transition-all duration-300 ${
+                                  isPerfect ? 'bg-green-500' :
+                                  submission.correct_picks >= 8 ? 'bg-orange-500' :
+                                  submission.correct_picks >= 5 ? 'bg-blue-500' :
+                                  'bg-red-500'
+                                }`}
+                                style={{ 
+                                  width: `${(submission.correct_picks / submission.total_picks) * 100}%` 
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <Target className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+                  <p className="pixel-font text-gray-600">No slates submitted yet</p>
+                </div>
+              )}
+            </div>
+            
+            {/* Summary Stats */}
             <div className="grid grid-cols-2 gap-4 text-center">
               <div className="bg-green-50 rounded-lg p-3">
                 <div className="text-lg font-bold pixel-font text-green-700">
@@ -964,10 +1043,18 @@ function ClickableStatCard({ icon, label, value, color, onClick, subtitle }: any
 
 // Modal Component
 function Modal({ title, children, onClose }: any) {
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = 'unset'
+    }
+  }, [])
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl max-w-md w-full max-h-[80vh] overflow-hidden">
-        <div className="sticky top-0 bg-white border-b-2 border-gray-200 p-4 rounded-t-2xl">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] flex flex-col my-8">
+        <div className="bg-white border-b-2 border-gray-200 p-4 rounded-t-2xl flex-shrink-0">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-bold pixel-font text-gray-800">{title}</h3>
             <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
@@ -975,7 +1062,7 @@ function Modal({ title, children, onClose }: any) {
             </button>
           </div>
         </div>
-        <div className="p-4 overflow-y-auto">
+        <div className="p-4 overflow-y-auto flex-grow">
           {children}
         </div>
       </div>
