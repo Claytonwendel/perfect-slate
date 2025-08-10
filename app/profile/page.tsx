@@ -1,4 +1,4 @@
-// app/profile/page.tsx - COMPLETE OVERHAUL
+// app/profile/page.tsx - COMPLETE OVERHAUL WITH ACTIVE SUPABASE INTEGRATION
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -8,18 +8,20 @@ import {
   Calendar, Coins, LogOut, Home, Edit2, Save,
   X, CheckCircle, XCircle, Percent, Zap, Users,
   Share2, Copy, Award, Clock, AlertTriangle,
-  ExternalLink, Gift, Star, Download
+  ExternalLink, Gift, Star, Download, RefreshCw
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
+// Type definitions based on your actual database structure
 type UserProfile = {
   id: string
   email: string
   username: string
   avatar_url?: string
   favorite_team?: string
-  favorite_sport?: string
+  favorite_sport?: 'MLB' | 'NFL' | 'NCAAF'
   created_at: string
+  updated_at: string
   total_earnings: number
   perfect_slates: number
   total_slates_submitted: number
@@ -27,26 +29,55 @@ type UserProfile = {
   token_balance: number
   lifetime_tokens_earned: number
   lifetime_tokens_used: number
-  promo_code?: string
+  referral_code?: string
   bad_beats_8: number
   bad_beats_9: number
+  referred_by?: string
+  slates_toward_next_token: number
 }
 
 type ActiveSlate = {
-  id: string
-  sport: string
-  date: string
-  picks_count: number
+  id: number
+  user_id: string
+  contest_id: number
+  sport: 'MLB' | 'NFL' | 'NCAAF'
+  week_number: number
+  submitted_at: string
   tokens_used: number
-  status: 'pending' | 'grading' | 'final'
+  total_picks: number
+  correct_picks: number | null
+  is_finalized: boolean
+  is_perfect: boolean | null
+  live_correct_count: number
+  graded_picks_count: number
 }
 
-type EarningsRecord = {
-  id: string
-  date: string
+type Submission = {
+  id: number
+  user_id: string
+  contest_id: number
+  submitted_at: string
+  tokens_used: number
+  correct_picks: number
+  total_picks: number
+  is_perfect: boolean
+  payout_amount: number
+  is_finalized: boolean
+  contest?: {
+    sport: string
+    week_number: number
+  }
+}
+
+type TokenTransaction = {
+  id: number
+  user_id: string
+  transaction_type: string
   amount: number
-  contest: string
-  type: 'prize' | 'referral'
+  balance_after: number
+  description: string
+  created_at: string
+  submission_id?: number
 }
 
 export default function ProfilePage() {
@@ -57,7 +88,7 @@ export default function ProfilePage() {
   const [editing, setEditing] = useState(false)
   const [username, setUsername] = useState('')
   const [favoriteTeam, setFavoriteTeam] = useState('')
-  const [favoriteSport, setFavoriteSport] = useState('MLB')
+  const [favoriteSport, setFavoriteSport] = useState<'MLB' | 'NFL' | 'NCAAF'>('MLB')
   const [saving, setSaving] = useState(false)
   
   // Modal states
@@ -72,8 +103,13 @@ export default function ProfilePage() {
   
   // Data states
   const [activeSlates, setActiveSlates] = useState<ActiveSlate[]>([])
-  const [earningsHistory, setEarningsHistory] = useState<EarningsRecord[]>([])
+  const [perfectSlates, setPerfectSlates] = useState<Submission[]>([])
+  const [allSubmissions, setAllSubmissions] = useState<Submission[]>([])
+  const [badBeats, setBadBeats] = useState<Submission[]>([])
+  const [tokenTransactions, setTokenTransactions] = useState<TokenTransaction[]>([])
+  const [winRateBySport, setWinRateBySport] = useState<{[key: string]: {total: number, perfect: number}}>({})
   const [copySuccess, setCopySuccess] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     checkUser()
@@ -89,126 +125,104 @@ export default function ProfilePage() {
       }
 
       setUser(user)
-
-      // Get user profile with extended data
-      const { data: profileData, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single()
-
-      if (error) {
-        console.error('Error fetching profile:', error)
-        if (error.code === 'PGRST116') {
-          await createProfile(user)
-        }
-      } else {
-        setProfile(profileData)
-        setUsername(profileData.username || '')
-        setFavoriteTeam(profileData.favorite_team || '')
-        setFavoriteSport(profileData.favorite_sport || 'MLB')
-        
-        // Generate promo code if doesn't exist
-        if (!profileData.promo_code) {
-          await generatePromoCode(user.id, profileData.username)
-        }
-      }
-      
-      // Load active slates
-      await loadActiveSlates(user.id)
-      await loadEarningsHistory(user.id)
+      await loadUserData(user.id)
     } catch (error) {
       console.error('Error:', error)
+      router.push('/')
     } finally {
       setLoading(false)
     }
   }
 
-  const createProfile = async (user: any) => {
-    const { data, error } = await supabase
+  const loadUserData = async (userId: string) => {
+    // Load user profile
+    const { data: profileData, error } = await supabase
       .from('user_profiles')
-      .insert({
-        id: user.id,
-        email: user.email,
-        username: user.email.split('@')[0],
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        total_earnings: 0,
-        perfect_slates: 0,
-        total_slates_submitted: 0,
-        win_percentage: 0,
-        token_balance: 1,
-        lifetime_tokens_earned: 1,
-        lifetime_tokens_used: 0,
-        bad_beats_8: 0,
-        bad_beats_9: 0,
-        favorite_sport: 'MLB'
-      })
-      .select()
+      .select('*')
+      .eq('id', userId)
       .single()
 
-    if (!error && data) {
-      setProfile(data)
-      setUsername(data.username)
-      await generatePromoCode(user.id, data.username)
+    if (error) {
+      console.error('Error fetching profile:', error)
+      return
+    }
+
+    setProfile(profileData)
+    setUsername(profileData.username || '')
+    setFavoriteTeam(profileData.favorite_team || '')
+    setFavoriteSport(profileData.favorite_sport || 'MLB')
+
+    // Load active slates from view
+    const { data: activeSlatesData } = await supabase
+      .from('active_slates_view')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('is_finalized', false)
+
+    if (activeSlatesData) {
+      setActiveSlates(activeSlatesData)
+    }
+
+    // Load all submissions for history
+    const { data: submissionsData } = await supabase
+      .from('submissions')
+      .select(`
+        *,
+        contest:contests(sport, week_number)
+      `)
+      .eq('user_id', userId)
+      .order('submitted_at', { ascending: false })
+
+    if (submissionsData) {
+      setAllSubmissions(submissionsData)
+      
+      // Filter perfect slates
+      const perfect = submissionsData.filter(s => s.is_perfect && s.is_finalized)
+      setPerfectSlates(perfect)
+      
+      // Filter bad beats (8 or 9 correct)
+      const beats = submissionsData.filter(s => 
+        s.is_finalized && 
+        (s.correct_picks === 8 || s.correct_picks === 9) && 
+        !s.is_perfect
+      )
+      setBadBeats(beats)
+      
+      // Calculate win rate by sport
+      const sportStats: {[key: string]: {total: number, perfect: number}} = {}
+      submissionsData.forEach(s => {
+        if (s.contest && s.is_finalized) {
+          const sport = s.contest.sport
+          if (!sportStats[sport]) {
+            sportStats[sport] = { total: 0, perfect: 0 }
+          }
+          sportStats[sport].total++
+          if (s.is_perfect) {
+            sportStats[sport].perfect++
+          }
+        }
+      })
+      setWinRateBySport(sportStats)
+    }
+
+    // Load token transactions
+    const { data: tokenData } = await supabase
+      .from('token_transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    if (tokenData) {
+      setTokenTransactions(tokenData)
     }
   }
 
-  const generatePromoCode = async (userId: string, username: string) => {
-    const promoCode = `${username.toUpperCase()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`
-    
-    await supabase
-      .from('user_profiles')
-      .update({ promo_code: promoCode })
-      .eq('id', userId)
-    
-    if (profile) {
-      setProfile({ ...profile, promo_code: promoCode })
-    }
-  }
-
-  const loadActiveSlates = async (userId: string) => {
-    // Mock data for now - replace with real query
-    const mockActiveSlates: ActiveSlate[] = [
-      {
-        id: '1',
-        sport: 'MLB',
-        date: 'July 5, 2025',
-        picks_count: 8,
-        tokens_used: 2,
-        status: 'pending'
-      },
-      {
-        id: '2', 
-        sport: 'MLB',
-        date: 'July 4, 2025',
-        picks_count: 10,
-        tokens_used: 0,
-        status: 'grading'
-      }
-    ]
-    setActiveSlates(mockActiveSlates)
-  }
-
-  const loadEarningsHistory = async (userId: string) => {
-    // Mock data for now - replace with real query
-    const mockEarnings: EarningsRecord[] = [
-      {
-        id: '1',
-        date: 'June 28, 2025',
-        amount: 2500,
-        contest: 'MLB Daily',
-        type: 'prize'
-      },
-      {
-        id: '2',
-        date: 'June 15, 2025', 
-        amount: 50,
-        contest: 'Referral Bonus',
-        type: 'referral'
-      }
-    ]
-    setEarningsHistory(mockEarnings)
+  const refreshData = async () => {
+    if (!user || refreshing) return
+    setRefreshing(true)
+    await loadUserData(user.id)
+    setRefreshing(false)
   }
 
   const handleSave = async () => {
@@ -227,7 +241,7 @@ export default function ProfilePage() {
 
     if (!error) {
       setEditing(false)
-      await checkUser()
+      await loadUserData(profile.id)
     }
     setSaving(false)
   }
@@ -238,17 +252,25 @@ export default function ProfilePage() {
   }
 
   const copyPromoCode = async () => {
-    if (profile?.promo_code) {
-      await navigator.clipboard.writeText(profile.promo_code)
+    if (profile?.referral_code) {
+      await navigator.clipboard.writeText(profile.referral_code)
       setCopySuccess(true)
       setTimeout(() => setCopySuccess(false), 2000)
+    }
+  }
+
+  const shareOnTwitter = () => {
+    if (profile?.referral_code) {
+      const text = `Join me on Perfect Slate! Use my promo code ${profile.referral_code} to get a free token when you sign up. Let's win together! 🏆`
+      const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`
+      window.open(url, '_blank')
     }
   }
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-sky-400 to-green-500 flex items-center justify-center">
-        <div className="text-white pixel-font text-2xl">LOADING...</div>
+        <div className="text-white pixel-font text-2xl animate-pulse">LOADING...</div>
       </div>
     )
   }
@@ -264,6 +286,9 @@ export default function ProfilePage() {
   const winRate = profile.total_slates_submitted > 0 
     ? ((profile.perfect_slates / profile.total_slates_submitted) * 100).toFixed(1)
     : '0.0'
+
+  const tokensUntilNext = 30 - profile.slates_toward_next_token
+  const tokenProgress = (profile.slates_toward_next_token / 30) * 100
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-400 to-green-500">
@@ -320,25 +345,35 @@ export default function ProfilePage() {
                 </div>
               </div>
               
-              <button
-                onClick={() => editing ? handleSave() : setEditing(true)}
-                disabled={saving}
-                className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white px-4 py-2 rounded-lg pixel-font flex items-center space-x-2"
-              >
-                {saving ? (
-                  <div className="animate-spin">⚡</div>
-                ) : editing ? (
-                  <>
-                    <Save className="w-4 h-4" />
-                    <span>SAVE</span>
-                  </>
-                ) : (
-                  <>
-                    <Edit2 className="w-4 h-4" />
-                    <span>EDIT</span>
-                  </>
-                )}
-              </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={refreshData}
+                  disabled={refreshing}
+                  className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white p-2 rounded-lg"
+                >
+                  <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+                </button>
+                
+                <button
+                  onClick={() => editing ? handleSave() : setEditing(true)}
+                  disabled={saving}
+                  className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white px-4 py-2 rounded-lg pixel-font flex items-center space-x-2"
+                >
+                  {saving ? (
+                    <div className="animate-spin">⚡</div>
+                  ) : editing ? (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>SAVE</span>
+                    </>
+                  ) : (
+                    <>
+                      <Edit2 className="w-4 h-4" />
+                      <span>EDIT</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -448,7 +483,7 @@ export default function ProfilePage() {
                     </label>
                     <select
                       value={favoriteSport}
-                      onChange={(e) => setFavoriteSport(e.target.value)}
+                      onChange={(e) => setFavoriteSport(e.target.value as 'MLB' | 'NFL' | 'NCAAF')}
                       className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg pixel-font"
                     >
                       <option value="MLB">MLB</option>
@@ -485,15 +520,26 @@ export default function ProfilePage() {
             </div>
             
             <div className="space-y-3 max-h-64 overflow-y-auto">
-              {earningsHistory.map(earning => (
-                <div key={earning.id} className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
+              {perfectSlates.filter(s => s.payout_amount > 0).map(slate => (
+                <div key={slate.id} className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
                   <div>
-                    <div className="font-bold pixel-font text-sm">{earning.contest}</div>
-                    <div className="text-xs pixel-font text-gray-600">{earning.date}</div>
+                    <div className="font-bold pixel-font text-sm">
+                      {slate.contest?.sport || 'Contest'} - Week {slate.contest?.week_number}
+                    </div>
+                    <div className="text-xs pixel-font text-gray-600">
+                      {new Date(slate.submitted_at).toLocaleDateString()}
+                    </div>
                   </div>
-                  <div className="text-green-600 font-bold pixel-font">+${earning.amount}</div>
+                  <div className="text-green-600 font-bold pixel-font">+${slate.payout_amount}</div>
                 </div>
               ))}
+              
+              {perfectSlates.filter(s => s.payout_amount > 0).length === 0 && (
+                <div className="text-center py-8">
+                  <DollarSign className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+                  <p className="pixel-font text-gray-600">No earnings yet - keep playing!</p>
+                </div>
+              )}
             </div>
             
             <button className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg pixel-font flex items-center justify-center space-x-2">
@@ -513,9 +559,34 @@ export default function ProfilePage() {
               <p className="text-sm pixel-font text-yellow-700">Each perfect slate = 5 tokens earned!</p>
             </div>
             
-            <div className="text-center py-8">
-              <Trophy className="w-16 h-16 mx-auto text-yellow-500 mb-4" />
-              <p className="pixel-font text-gray-600">No perfect slates yet - but you're getting close!</p>
+            {perfectSlates.length > 0 ? (
+              <div className="space-y-3 max-h-64 overflow-y-auto">
+                {perfectSlates.map(slate => (
+                  <div key={slate.id} className="bg-gray-50 rounded-lg p-3">
+                    <div className="flex justify-between items-center mb-2">
+                      <div className="font-bold pixel-font text-sm">
+                        {slate.contest?.sport || 'Contest'} - Week {slate.contest?.week_number}
+                      </div>
+                      <Trophy className="w-4 h-4 text-yellow-500" />
+                    </div>
+                    <div className="flex justify-between text-xs pixel-font text-gray-600">
+                      <span>{new Date(slate.submitted_at).toLocaleDateString()}</span>
+                      <span className="text-green-600">${slate.payout_amount}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Trophy className="w-16 h-16 mx-auto text-yellow-500 mb-4" />
+                <p className="pixel-font text-gray-600">No perfect slates yet - you got this!</p>
+              </div>
+            )}
+            
+            <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-3">
+              <p className="text-xs pixel-font text-blue-700 text-center">
+                Total Tokens from Perfect Slates: {profile.perfect_slates * 5}
+              </p>
             </div>
           </div>
         </Modal>
@@ -533,14 +604,43 @@ export default function ProfilePage() {
               </div>
             </div>
             
-            <div className="text-center py-8">
+            <div className="text-center py-6">
               <Target className="w-16 h-16 mx-auto text-blue-500 mb-4" />
-              <p className="pixel-font text-gray-600">
-                {profile.total_slates_submitted} total slates submitted
+              <p className="pixel-font text-2xl font-bold text-gray-800 mb-2">
+                {profile.total_slates_submitted}
               </p>
-              <p className="text-sm pixel-font text-gray-500 mt-2">
-                {30 - (profile.total_slates_submitted % 30)} more until next token!
+              <p className="pixel-font text-sm text-gray-600">Total Slates Submitted</p>
+            </div>
+            
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm pixel-font text-gray-700">Progress to Next Token</span>
+                <span className="text-sm pixel-font font-bold">{profile.slates_toward_next_token}/30</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-4">
+                <div 
+                  className="bg-blue-500 h-4 rounded-full transition-all duration-300"
+                  style={{ width: `${tokenProgress}%` }}
+                />
+              </div>
+              <p className="text-xs pixel-font text-gray-600 mt-2 text-center">
+                {tokensUntilNext} more slates until next token!
               </p>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 text-center">
+              <div className="bg-green-50 rounded-lg p-3">
+                <div className="text-lg font-bold pixel-font text-green-700">
+                  {Math.floor(profile.total_slates_submitted / 30)}
+                </div>
+                <div className="text-xs pixel-font text-green-600">Tokens from Slates</div>
+              </div>
+              <div className="bg-purple-50 rounded-lg p-3">
+                <div className="text-lg font-bold pixel-font text-purple-700">
+                  {Math.floor(profile.total_slates_submitted / 100) * 2}
+                </div>
+                <div className="text-xs pixel-font text-purple-600">Bonus Tokens (100s)</div>
+              </div>
             </div>
           </div>
         </Modal>
@@ -553,23 +653,40 @@ export default function ProfilePage() {
             <div className="bg-purple-50 border-2 border-purple-300 rounded-lg p-4">
               <h4 className="font-bold pixel-font text-purple-800 mb-2">Overall Win Rate</h4>
               <p className="text-2xl font-bold pixel-font text-purple-600">{winRate}%</p>
+              <p className="text-xs pixel-font text-purple-600 mt-1">
+                {profile.perfect_slates} / {profile.total_slates_submitted} Perfect Slates
+              </p>
             </div>
             
             <div className="space-y-3">
               <h4 className="font-bold pixel-font text-gray-800">By Sport:</h4>
               <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="pixel-font text-sm">MLB</span>
-                  <span className="pixel-font text-sm font-bold">{winRate}%</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="pixel-font text-sm">NFL</span>
-                  <span className="pixel-font text-sm font-bold">0.0%</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="pixel-font text-sm">NCAAF</span>
-                  <span className="pixel-font text-sm font-bold">0.0%</span>
-                </div>
+                {['MLB', 'NFL', 'NCAAF'].map(sport => {
+                  const stats = winRateBySport[sport] || { total: 0, perfect: 0 }
+                  const sportWinRate = stats.total > 0 
+                    ? ((stats.perfect / stats.total) * 100).toFixed(1)
+                    : '0.0'
+                  
+                  return (
+                    <div key={sport} className="bg-gray-50 rounded-lg p-3">
+                      <div className="flex justify-between items-center">
+                        <span className="pixel-font text-sm font-bold">{sport}</span>
+                        <div className="text-right">
+                          <span className="pixel-font text-sm font-bold">{sportWinRate}%</span>
+                          <span className="pixel-font text-xs text-gray-600 ml-2">
+                            ({stats.perfect}/{stats.total})
+                          </span>
+                        </div>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                        <div 
+                          className="bg-purple-500 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${sportWinRate}%` }}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </div>
@@ -586,20 +703,54 @@ export default function ProfilePage() {
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <div className="font-bold pixel-font text-sm">{slate.sport} Contest</div>
-                      <div className="text-xs pixel-font text-gray-600">{slate.date}</div>
+                      <div className="text-xs pixel-font text-gray-600">
+                        Week {slate.week_number} • {new Date(slate.submitted_at).toLocaleDateString()}
+                      </div>
                     </div>
                     <div className={`px-2 py-1 rounded text-xs pixel-font ${
-                      slate.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                      slate.status === 'grading' ? 'bg-blue-100 text-blue-800' :
+                      slate.graded_picks_count === 0 ? 'bg-yellow-100 text-yellow-800' :
+                      slate.graded_picks_count < slate.total_picks ? 'bg-blue-100 text-blue-800' :
                       'bg-green-100 text-green-800'
                     }`}>
-                      {slate.status.toUpperCase()}
+                      {slate.graded_picks_count === 0 ? 'PENDING' :
+                       slate.graded_picks_count < slate.total_picks ? 'LIVE' :
+                       'GRADING'}
                     </div>
                   </div>
-                  <div className="flex justify-between text-xs pixel-font text-gray-600">
-                    <span>{slate.picks_count} picks</span>
-                    <span>{slate.tokens_used} tokens used</span>
+                  
+                  <div className="flex justify-between items-center">
+                    <div className="text-xs pixel-font text-gray-600">
+                      <span>Picks: {slate.total_picks - slate.tokens_used}</span>
+                      {slate.tokens_used > 0 && (
+                        <span className="ml-2">• Tokens: {slate.tokens_used}</span>
+                      )}
+                    </div>
+                    
+                    {slate.graded_picks_count > 0 && (
+                      <div className="flex items-center space-x-2">
+                        <div className="text-sm pixel-font font-bold">
+                          {slate.live_correct_count}/{slate.graded_picks_count}
+                        </div>
+                        <div className="text-xs pixel-font text-gray-500">correct</div>
+                      </div>
+                    )}
                   </div>
+                  
+                  {slate.graded_picks_count > 0 && (
+                    <div className="mt-2">
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className="bg-green-500 h-2 rounded-full transition-all duration-300"
+                          style={{ 
+                            width: `${(slate.graded_picks_count / slate.total_picks) * 100}%` 
+                          }}
+                        />
+                      </div>
+                      <p className="text-xs pixel-font text-gray-600 mt-1 text-center">
+                        {slate.graded_picks_count}/{slate.total_picks} graded
+                      </p>
+                    </div>
+                  )}
                 </div>
               ))
             ) : (
@@ -622,20 +773,50 @@ export default function ProfilePage() {
             </div>
             
             <div className="grid grid-cols-2 gap-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold pixel-font text-red-600">{profile.bad_beats_9}</div>
-                <div className="text-xs pixel-font text-gray-600">9 Correct</div>
+              <div className="text-center bg-orange-50 rounded-lg p-4">
+                <div className="text-3xl font-bold pixel-font text-orange-600">{profile.bad_beats_9}</div>
+                <div className="text-sm pixel-font text-gray-600">9 Correct</div>
               </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold pixel-font text-red-600">{profile.bad_beats_8}</div>
-                <div className="text-xs pixel-font text-gray-600">8 Correct</div>
+              <div className="text-center bg-red-50 rounded-lg p-4">
+                <div className="text-3xl font-bold pixel-font text-red-600">{profile.bad_beats_8}</div>
+                <div className="text-sm pixel-font text-gray-600">8 Correct</div>
               </div>
             </div>
             
-            <div className="text-center py-4">
-              <AlertTriangle className="w-16 h-16 mx-auto text-red-500 mb-4" />
-              <p className="pixel-font text-gray-600">
-                Total bad beats: {profile.bad_beats_8 + profile.bad_beats_9}
+            {badBeats.length > 0 ? (
+              <div className="space-y-3 max-h-64 overflow-y-auto">
+                {badBeats.map(beat => (
+                  <div key={beat.id} className="bg-gray-50 rounded-lg p-3">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <div className="font-bold pixel-font text-sm">
+                          {beat.contest?.sport || 'Contest'} - Week {beat.contest?.week_number}
+                        </div>
+                        <div className="text-xs pixel-font text-gray-600">
+                          {new Date(beat.submitted_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <div className={`px-2 py-1 rounded text-xs pixel-font font-bold ${
+                        beat.correct_picks === 9 ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'
+                      }`}>
+                        {beat.correct_picks}/10
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <AlertTriangle className="w-16 h-16 mx-auto text-red-500 mb-4" />
+                <p className="pixel-font text-gray-600">
+                  No bad beats yet - that's a good thing!
+                </p>
+              </div>
+            )}
+            
+            <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-3">
+              <p className="text-xs pixel-font text-blue-700 text-center">
+                Total Bad Beat Tokens Earned: {profile.bad_beats_8 + profile.bad_beats_9}
               </p>
             </div>
           </div>
@@ -668,6 +849,29 @@ export default function ProfilePage() {
                 <strong>Token Stats:</strong> Earned {profile.lifetime_tokens_earned} • Used {profile.lifetime_tokens_used}
               </p>
             </div>
+            
+            {tokenTransactions.length > 0 && (
+              <div>
+                <h4 className="font-bold pixel-font text-gray-800 mb-2">Recent Transactions:</h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {tokenTransactions.slice(0, 10).map(tx => (
+                    <div key={tx.id} className="bg-gray-50 rounded p-2 flex justify-between items-center">
+                      <div className="text-xs pixel-font">
+                        <div className="font-bold">{tx.description}</div>
+                        <div className="text-gray-600">
+                          {new Date(tx.created_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <div className={`text-sm pixel-font font-bold ${
+                        tx.amount > 0 ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {tx.amount > 0 ? '+' : ''}{tx.amount}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </Modal>
       )}
@@ -687,7 +891,7 @@ export default function ProfilePage() {
               <div className="flex space-x-2">
                 <input
                   type="text"
-                  value={profile.promo_code || ''}
+                  value={profile.referral_code || ''}
                   readOnly
                   className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-lg pixel-font font-bold text-center bg-gray-50"
                 />
@@ -710,9 +914,12 @@ export default function ProfilePage() {
               </div>
             </div>
             
-            <button className="w-full bg-green-500 hover:bg-green-600 text-white py-3 rounded-lg pixel-font flex items-center justify-center space-x-2">
+            <button 
+              onClick={shareOnTwitter}
+              className="w-full bg-blue-400 hover:bg-blue-500 text-white py-3 rounded-lg pixel-font flex items-center justify-center space-x-2"
+            >
               <Share2 className="w-4 h-4" />
-              <span>SHARE ON SOCIAL</span>
+              <span>SHARE ON TWITTER</span>
             </button>
           </div>
         </Modal>
@@ -759,7 +966,7 @@ function ClickableStatCard({ icon, label, value, color, onClick, subtitle }: any
 function Modal({ title, children, onClose }: any) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl max-w-md w-full max-h-[80vh] overflow-hidden">
         <div className="sticky top-0 bg-white border-b-2 border-gray-200 p-4 rounded-t-2xl">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-bold pixel-font text-gray-800">{title}</h3>
@@ -768,7 +975,7 @@ function Modal({ title, children, onClose }: any) {
             </button>
           </div>
         </div>
-        <div className="p-4">
+        <div className="p-4 overflow-y-auto">
           {children}
         </div>
       </div>
