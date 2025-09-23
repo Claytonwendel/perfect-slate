@@ -1,20 +1,24 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { 
   Users, DollarSign, Trophy, Clock, X, Trash2,
   ChevronDown, AlertCircle, FileText, BarChart3, 
   User, Coins, Zap, Menu, CircleDollarSign, Calendar,
-  Lock, Unlock, CheckCircle, XCircle, LogOut, ArrowRight
+  CheckCircle, LogOut, ArrowRight
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import AuthForm from '@/components/AuthForm'
 
-// Type definitions
+/* =========================
+   Types
+========================= */
+type Sport = 'NFL' | 'NCAAF' | 'MLB'
+
 type Team = {
   id: number
-  sport: 'NFL' | 'NCAAF' | 'MLB'
+  sport: Sport
   full_name: string
   city: string
   nickname: string
@@ -28,7 +32,7 @@ type Team = {
 type Game = {
   id: number
   contest_id: number
-  sport: 'NFL' | 'NCAAF' | 'MLB'
+  sport: Sport
   home_team: string
   away_team: string
   home_team_short: string
@@ -53,7 +57,7 @@ type Pick = {
 
 type Contest = {
   id: number
-  sport: 'NFL' | 'NCAAF' | 'MLB'
+  sport: Sport
   season_id?: number
   week_number: number
   open_time: string
@@ -80,66 +84,103 @@ type UserPick = {
   displayText: string
 }
 
-// Custom Token Icon Component
+/* =========================
+   Utilities
+========================= */
+
+// No-tie logic: if value is an integer, add 0.5. Never subtract.
+const applyNoTieLogic = (value: number): number =>
+  Math.floor(value) === value ? value + 0.5 : value
+
+// Fallback city shortener (used only if team table data is missing)
+const getCityName = (teamName: string): string => {
+  const suffixes = [
+    'Chiefs','Lions','Packers','Bears','Vikings','Buccaneers',
+    'Patriots','Bills','Jets','Dolphins','Ravens','Bengals',
+    'Browns','Steelers','Texans','Colts','Jaguars','Titans',
+    'Broncos','Raiders','Chargers','Cowboys','Eagles','Giants',
+    'Commanders','49ers','Seahawks','Rams','Saints','Falcons',
+    'Panthers','Rays','Orioles','Blue Jays','Yankees','Red Sox',
+    'Guardians','Tigers','Royals','Twins','White Sox','Astros',
+    'Athletics','Angels','Mariners','Rangers','Phillies','Mets',
+    'Nationals','Marlins','Braves','Brewers','Cubs','Reds',
+    'Pirates','Cardinals','Dodgers','Giants','Padres','Rockies',
+    'Diamondbacks'
+  ]
+  let city = teamName
+  suffixes.forEach(s => {
+    if (city.endsWith(s)) city = city.replace(s, '').trim()
+  })
+  const shortNames: Record<string, string> = {
+    'San Francisco': 'SF',
+    'Los Angeles': 'LA',
+    'New York': 'NY',
+    'Tampa Bay': 'Tampa',
+    'Green Bay': 'GB',
+    'New England': 'NE',
+    'Kansas City': 'KC',
+    'Las Vegas': 'LV',
+    'San Diego': 'SD'
+  }
+  return shortNames[city] || city
+}
+
+/* =========================
+   Small UI bits
+========================= */
 const TokenIcon = ({ className }: { className?: string }) => (
-  <svg 
-    className={className} 
-    viewBox="0 0 24 24" 
-    fill="currentColor"
-  >
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
     <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" />
     <text x="12" y="16" textAnchor="middle" fontSize="10" fontWeight="bold">T</text>
   </svg>
 )
 
-// Helper function to apply no-tie logic - Only ADD 0.5, never subtract
-const applyNoTieLogic = (value: number): number => {
-  return Math.floor(value) === value ? value + 0.5 : value
-}
-
-// Pixelated Cloud Component
+// Pixelated cloud for the header
 const PixelatedCloud = ({ index }: { index: number }) => {
   const speeds = [25, 35, 45, 30, 40, 50, 28, 38]
-  const sizes = [
-    { width: 80, height: 40 },
-    { width: 120, height: 50 },
-    { width: 100, height: 45 },
-    { width: 90, height: 35 },
-    { width: 110, height: 48 },
-    { width: 85, height: 38 },
-    { width: 95, height: 42 },
-    { width: 105, height: 46 }
+  const dims = [
+    { w: 80, h: 40, o: 0.25 },
+    { w: 120, h: 50, o: 0.35 },
+    { w: 100, h: 45, o: 0.30 },
+    { w: 90, h: 35, o: 0.22 },
+    { w: 110, h: 48, o: 0.28 },
+    { w: 85, h: 38, o: 0.26 },
+    { w: 95, h: 42, o: 0.32 },
+    { w: 105, h: 46, o: 0.29 }
   ]
-  
+  const d = dims[index % dims.length]
   return (
     <div
-      className="absolute bg-white/40"
+      className="absolute bg-white"
       style={{
         top: `${15 + (index * 12) % 50}%`,
-        width: `${sizes[index].width}px`,
-        height: `${sizes[index].height}px`,
-        animation: `cloudDrift ${speeds[index]}s linear infinite`,
-        animationDelay: `${index * 3}s`,
-        clipPath: `polygon(
-          25% 0%, 75% 0%, 100% 25%, 100% 75%, 
-          75% 100%, 25% 100%, 0% 75%, 0% 25%
-        )`,
+        width: d.w,
+        height: d.h,
+        opacity: d.o,
+        animation: `cloudDrift ${speeds[index % speeds.length]}s linear infinite`,
+        animationDelay: `${index * 2.2}s`,
+        clipPath: `polygon(25% 0%, 75% 0%, 100% 25%, 100% 75%, 75% 100%, 25% 100%, 0% 75%, 0% 25%)`,
         imageRendering: 'pixelated'
       }}
     />
   )
 }
 
+/* =========================
+   Page Component
+========================= */
 export default function PerfectSlateGame() {
   const router = useRouter()
-  
+
   // State
-  const [selectedSport, setSelectedSport] = useState<'NFL' | 'NCAAF' | 'MLB'>('NFL')
+  const [selectedSport, setSelectedSport] = useState<Sport>('NFL')
   const [showSportDropdown, setShowSportDropdown] = useState(false)
   const [showMobileMenu, setShowMobileMenu] = useState(false)
+
   const [games, setGames] = useState<Game[]>([])
   const [picks, setPicks] = useState<Pick[]>([])
-  const [teams, setTeams] = useState<Record<string, Team>>({})
+  const [teamsMap, setTeamsMap] = useState<Record<string, Team>>({})
+
   const [currentContest, setCurrentContest] = useState<Contest | null>(null)
   const [selectedPicks, setSelectedPicks] = useState<UserPick[]>([])
   const [gamesWithTokens, setGamesWithTokens] = useState<Set<number>>(new Set())
@@ -153,24 +194,32 @@ export default function PerfectSlateGame() {
   const [contestStatus, setContestStatus] = useState<'pre-contest' | 'active' | 'locked'>('active')
   const [user, setUser] = useState<any>(null)
   const [tokenBalance, setTokenBalance] = useState(0)
+
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signup')
   const [showVerificationSuccess, setShowVerificationSuccess] = useState(false)
 
-  // Fetch initial data
+  // Responsive flag for abbreviation+logo on mobile
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const update = () => setIsMobile(window.innerWidth < 640)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+
+  /* -------- Auth & initial load -------- */
   useEffect(() => {
     const handleAuthFlow = async () => {
       const urlParams = new URLSearchParams(window.location.search)
       const verified = urlParams.get('verified')
-      const error = urlParams.get('error')
       const authType = urlParams.get('auth')
-      
+
       if (authType === 'fragment') {
         const hash = window.location.hash
         if (hash.includes('access_token=')) {
           try {
-            const { data, error } = await supabase.auth.getSession()
-            
+            const { data } = await supabase.auth.getSession()
             if (data.session) {
               setUser(data.session.user)
               await loadUserProfile(data.session.user.id)
@@ -181,35 +230,32 @@ export default function PerfectSlateGame() {
             console.error('Fragment processing error:', err)
           }
         }
-        loadContestData()
+        await loadContestData()
         return
       }
-      
+
       if (verified === 'true') {
         setShowVerificationSuccess(true)
         window.history.replaceState({}, document.title, window.location.pathname)
       }
-      
+
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
         setUser(session.user)
         await loadUserProfile(session.user.id)
       }
-      
-      loadContestData()
+
+      await loadContestData()
     }
 
     handleAuthFlow()
-    
+
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session) {
         setUser(session.user)
         await loadUserProfile(session.user.id)
-        if (!showVerificationSuccess) {
-          setShowVerificationSuccess(true)
-        }
+        if (!showVerificationSuccess) setShowVerificationSuccess(true)
       }
-      
       if (event === 'SIGNED_OUT') {
         setUser(null)
         setTokenBalance(0)
@@ -218,21 +264,19 @@ export default function PerfectSlateGame() {
         setIsSubmitted(false)
       }
     })
-    
+
     return () => {
       authListener.subscription.unsubscribe()
     }
   }, [selectedSport])
 
-  // Timer effect
+  // Clock UI
   useEffect(() => {
-    const timer = setInterval(() => {
-      updateTimeRemaining()
-    }, 1000)
-    return () => clearInterval(timer)
+    const t = setInterval(() => updateTimeRemaining(), 1000)
+    return () => clearInterval(t)
   }, [currentContest, games])
 
-  // Refresh scores for live games
+  // Live refresh while games in progress
   useEffect(() => {
     const scoreInterval = setInterval(() => {
       if (games.some(g => g.status === 'in_progress')) {
@@ -249,27 +293,22 @@ export default function PerfectSlateGame() {
         .select('token_balance')
         .eq('id', userId)
         .single()
-      
-      if (error && error.code === 'PGRST116') {
-        const { error: createError } = await supabase
-          .rpc('create_profile_for_user', { user_id: userId })
-        
+
+      if (error && (error as any).code === 'PGRST116') {
+        const { error: createError } = await supabase.rpc('create_profile_for_user', { user_id: userId })
         if (!createError) {
           const { data: newUserData } = await supabase
             .from('user_profiles')
             .select('token_balance')
             .eq('id', userId)
             .single()
-          
-          if (newUserData) {
-            setTokenBalance(newUserData.token_balance)
-          }
+          if (newUserData) setTokenBalance(newUserData.token_balance)
         }
       } else if (userData) {
         setTokenBalance(userData.token_balance)
       }
-    } catch (error) {
-      console.error('Error loading user profile:', error)
+    } catch (e) {
+      console.error('Error loading user profile:', e)
     }
   }
 
@@ -283,159 +322,135 @@ export default function PerfectSlateGame() {
 
   const loadContestData = async () => {
     setIsLoading(true)
-    
-    const { data: contestData } = await supabase
-      .from('contests')
-      .select('*')
-      .eq('sport', selectedSport)
-      .in('status', ['open', 'locked', 'in_progress'])
-      .order('week_number', { ascending: false })
-      .limit(1)
-      .single()
-    
-    if (contestData) {
-      setCurrentContest(contestData)
-      
-      const { data: gamesData } = await supabase
-        .from('games')
+    try {
+      const { data: contestData } = await supabase
+        .from('contests')
         .select('*')
-        .eq('contest_id', contestData.id)
-        .order('scheduled_time', { ascending: true })
-      
-      if (gamesData) {
-        setGames(gamesData)
-        
-        const gameIds = gamesData.map(g => g.id)
-        const { data: picksData } = await supabase
-          .from('picks')
+        .eq('sport', selectedSport)
+        .in('status', ['open', 'locked', 'in_progress'])
+        .order('week_number', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (contestData) {
+        setCurrentContest(contestData)
+
+        const { data: gamesData } = await supabase
+          .from('games')
           .select('*')
-          .in('game_id', gameIds)
-        
-        if (picksData) {
-          setPicks(picksData)
+          .eq('contest_id', contestData.id)
+          .order('scheduled_time', { ascending: true })
+
+        if (gamesData) {
+          setGames(gamesData)
+
+          const gameIds = gamesData.map(g => g.id)
+          const { data: picksData } = await supabase
+            .from('picks')
+            .select('*')
+            .in('game_id', gameIds)
+          if (picksData) setPicks(picksData)
         }
       }
-      
-      // Fetch teams data
+
+      // Load teams for selected sport for logos/colors/abbr
       const { data: teamsData } = await supabase
         .from('teams')
         .select('*')
         .eq('sport', selectedSport)
-      
+
       if (teamsData) {
-        const teamsMap = teamsData.reduce((acc, team) => {
-          acc[team.full_name] = team
+        const map = teamsData.reduce((acc, t) => {
+          acc[t.full_name] = t
           return acc
         }, {} as Record<string, Team>)
-        setTeams(teamsMap)
+        setTeamsMap(map)
       }
+    } finally {
+      setIsLoading(false)
     }
-    
-    setIsLoading(false)
   }
 
   const updateTimeRemaining = () => {
     if (!currentContest) return
-    
     const now = new Date()
     const openTime = new Date(currentContest.open_time)
-    
+
     if (now < openTime) {
       setContestStatus('pre-contest')
       const diff = openTime.getTime() - now.getTime()
-      const hours = Math.floor(diff / (1000 * 60 * 60))
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-      setTimeRemaining(`${hours}h ${minutes}m`)
+      const h = Math.floor(diff / (1000 * 60 * 60))
+      const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+      setTimeRemaining(`${h}h ${m}m`)
       return
     }
-    
-    const upcomingGames = games.filter(g => 
-      g.status === 'scheduled' && new Date(g.scheduled_time) > now
-    )
-    
-    if (upcomingGames.length <= 4) {
+
+    const upcoming = games.filter(g => g.status === 'scheduled' && new Date(g.scheduled_time) > now)
+    if (upcoming.length <= 4) {
       setContestStatus('locked')
       setTimeRemaining('LOCKED')
       return
     }
-    
-    if (upcomingGames.length >= 5) {
+    if (upcoming.length >= 5) {
       setContestStatus('active')
-      const fifthToLastGame = upcomingGames[upcomingGames.length - 5]
-      const lockTime = new Date(fifthToLastGame.scheduled_time)
+      const fifthToLast = upcoming[upcoming.length - 5]
+      const lockTime = new Date(fifthToLast.scheduled_time)
       const diff = lockTime.getTime() - now.getTime()
-      
       if (diff <= 0) {
         setContestStatus('locked')
         setTimeRemaining('LOCKED')
       } else {
-        const hours = Math.floor(diff / (1000 * 60 * 60))
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-        setTimeRemaining(`${hours}h ${minutes}m`)
+        const h = Math.floor(diff / (1000 * 60 * 60))
+        const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+        setTimeRemaining(`${h}h ${m}m`)
       }
     }
   }
 
-  const isGameAvailable = (game: Game): boolean => {
+  const isGameAvailable = (game: Game) => {
     const now = new Date()
     const gameTime = new Date(game.scheduled_time)
     return game.status === 'scheduled' && gameTime > now
   }
 
-  const handlePickSelect = (gameId: number, pickType: 'spread' | 'total', selection: string, displayText: string, pickId: number) => {
+  const handlePickSelect = (
+    gameId: number,
+    pickType: 'spread' | 'total',
+    selection: string,
+    displayText: string,
+    pickId: number
+  ) => {
     if (!user) {
       setShowAuthModal(true)
       return
     }
-    
     if (isSubmitted || gamesWithTokens.has(gameId) || contestStatus !== 'active') return
-    
-    const existingPickIndex = selectedPicks.findIndex(
-      p => p.gameId === gameId && p.pickType === pickType && p.selection === selection
-    )
-    
-    // Toggle logic: If exact same pick exists, remove it
-    if (existingPickIndex !== -1) {
-      const newPicks = [...selectedPicks]
-      newPicks.splice(existingPickIndex, 1)
-      setSelectedPicks(newPicks)
-      return
-    }
-    
-    // Check if different selection for same game/type exists
-    const differentSelectionIndex = selectedPicks.findIndex(
-      p => p.gameId === gameId && p.pickType === pickType
-    )
-    
-    if (differentSelectionIndex !== -1) {
-      const newPicks = [...selectedPicks]
-      newPicks[differentSelectionIndex] = { gameId, pickId, pickType, selection, displayText }
-      setSelectedPicks(newPicks)
+
+    const idxSameType = selectedPicks.findIndex(p => p.gameId === gameId && p.pickType === pickType)
+    if (idxSameType !== -1) {
+      const cp = [...selectedPicks]
+      cp[idxSameType] = { gameId, pickId, pickType, selection, displayText }
+      setSelectedPicks(cp)
     } else {
-      const picksForThisGame = selectedPicks.filter(p => p.gameId === gameId)
-      
+      const picksForGame = selectedPicks.filter(p => p.gameId === gameId)
       if (selectedPicks.length + gamesWithTokens.size >= 10) return
-      if (picksForThisGame.length >= 2) return
-      
+      if (picksForGame.length >= 2) return
       setSelectedPicks([...selectedPicks, { gameId, pickId, pickType, selection, displayText }])
     }
   }
 
   const handleTokenToggle = (gameId: number) => {
     if (isSubmitted || contestStatus !== 'active') return
-    
-    const newTokenGames = new Set(gamesWithTokens)
-    
-    if (newTokenGames.has(gameId)) {
-      newTokenGames.delete(gameId)
-      setGamesWithTokens(newTokenGames)
+    const next = new Set(gamesWithTokens)
+    if (next.has(gameId)) {
+      next.delete(gameId)
+      setGamesWithTokens(next)
     } else {
-      if (selectedPicks.length + newTokenGames.size >= 10) return
+      if (selectedPicks.length + next.size >= 10) return
       if (gamesWithTokens.size >= 5) return
-      
       setSelectedPicks(selectedPicks.filter(p => p.gameId !== gameId))
-      newTokenGames.add(gameId)
-      setGamesWithTokens(newTokenGames)
+      next.add(gameId)
+      setGamesWithTokens(next)
     }
   }
 
@@ -445,26 +460,21 @@ export default function PerfectSlateGame() {
 
   const submitSlate = async () => {
     if (!user || !currentContest) return
-    
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/submit-picks`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
-          },
-          body: JSON.stringify({
-            contestId: currentContest.id,
-            picks: selectedPicks.map(p => p.pickId),
-            tokensUsed: gamesWithTokens.size
-          })
-        }
-      )
-      
+      const token = (await supabase.auth.getSession()).data.session?.access_token
+      const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/submit-picks`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token ?? ''}`
+        },
+        body: JSON.stringify({
+          contestId: currentContest.id,
+          picks: selectedPicks.map(p => p.pickId),
+          tokensUsed: gamesWithTokens.size
+        })
+      })
       const result = await response.json()
-      
       if (result.success) {
         setIsSubmitted(true)
         setShowConfirmModal(false)
@@ -472,242 +482,244 @@ export default function PerfectSlateGame() {
         setShowSuccessModal(true)
         checkUser()
       } else {
-        alert(result.error)
+        alert(result.error || 'Submission failed')
       }
-    } catch (error) {
-      console.error('Error submitting picks:', error)
+    } catch (e) {
+      console.error('Error submitting picks:', e)
       alert('Failed to submit picks. Please try again.')
     }
   }
 
+  /* -------- Game Card -------- */
   const GameCard = ({ game }: { game: Game }) => {
     const gamePicks = picks.filter(p => p.game_id === game.id)
     const spreads = gamePicks.filter(p => p.pick_type === 'spread')
-    const totals = gamePicks.filter(p => p.pick_type === 'total')
-    
+    const totals  = gamePicks.filter(p => p.pick_type === 'total')
+
     const homeSpread = spreads.find(p => p.selection === 'home')
     const awaySpread = spreads.find(p => p.selection === 'away')
-    const overTotal = totals.find(p => p.selection === 'over')
+    const overTotal  = totals.find(p => p.selection === 'over')
     const underTotal = totals.find(p => p.selection === 'under')
-    
+
     const hasToken = gamesWithTokens.has(game.id)
-    const isAvailable = isGameAvailable(game)
-    const isGameDisabled = hasToken || isSubmitted || !isAvailable || contestStatus !== 'active'
-    const isGameStarted = game.status === 'in_progress' || game.status === 'final'
-    
-    // Get team data
-    const homeTeam? = teams[game.home_team] || {}
-    const awayTeam? = teams[game.away_team] || {}
-    
-    // Check if on mobile
-    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640
-    
-    // Calculate pick percentages
-    const totalSpreadPicks = (homeSpread?.times_selected || 0) + (awaySpread?.times_selected || 0)
-    const totalTotalPicks = (overTotal?.times_selected || 0) + (underTotal?.times_selected || 0)
-    
-    const homeSpreadPct = totalSpreadPicks > 0 ? Math.round((homeSpread?.times_selected || 0) / totalSpreadPicks * 100) : 50
-    const awaySpreadPct = totalSpreadPicks > 0 ? Math.round((awaySpread?.times_selected || 0) / totalSpreadPicks * 100) : 50
-    const overPct = totalTotalPicks > 0 ? Math.round((overTotal?.times_selected || 0) / totalTotalPicks * 100) : 50
-    const underPct = totalTotalPicks > 0 ? Math.round((underTotal?.times_selected || 0) / totalTotalPicks * 100) : 50
-    
-    // Apply no-tie logic
+    const available = isGameAvailable(game)
+    const disabled  = hasToken || isSubmitted || !available || contestStatus !== 'active'
+    const started   = game.status === 'in_progress' || game.status === 'final'
+
+    // Teams (from table) for colors, logos, abbreviations
+    const homeTeam: Team | undefined = teamsMap[game.home_team]
+    const awayTeam: Team | undefined = teamsMap[game.away_team]
+
+    // Percentages
+    const totalSpread = (homeSpread?.times_selected || 0) + (awaySpread?.times_selected || 0)
+    const totalTotal  = (overTotal?.times_selected  || 0) + (underTotal?.times_selected  || 0)
+    const homeSpreadPct = totalSpread > 0 ? Math.round(((homeSpread?.times_selected || 0) / totalSpread) * 100) : 50
+    const awaySpreadPct = totalSpread > 0 ? Math.round(((awaySpread?.times_selected || 0) / totalSpread) * 100) : 50
+    const overPct       = totalTotal  > 0 ? Math.round(((overTotal?.times_selected  || 0) / totalTotal ) * 100) : 50
+    const underPct      = totalTotal  > 0 ? Math.round(((underTotal?.times_selected || 0) / totalTotal ) * 100) : 50
+
+    // Displays with no-tie
     const homeSpreadDisplay = applyNoTieLogic(game.home_spread)
     const awaySpreadDisplay = applyNoTieLogic(game.away_spread)
-    const totalDisplay = applyNoTieLogic(game.total_points)
-    
-    // Find most popular picks for closed games
-    const mostPopularSpread = homeSpreadPct >= awaySpreadPct ? 
-      { text: `${homeTeam?.short_name || game.home_team_short} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`, pct: homeSpreadPct } :
-      { text: `${awayTeam?.short_name || game.away_team_short} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`, pct: awaySpreadPct }
-    
-    const mostPopularTotal = overPct >= underPct ?
-      { text: `Over ${totalDisplay}`, pct: overPct } :
-      { text: `Under ${totalDisplay}`, pct: underPct }
-    
+    const totalDisplay      = applyNoTieLogic(game.total_points)
+
+    // Populars for closed
+    const mostPopularSpread = homeSpreadPct >= awaySpreadPct
+      ? { text: `${(homeTeam?.short_name || game.home_team_short || getCityName(game.home_team))} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`, pct: homeSpreadPct }
+      : { text: `${(awayTeam?.short_name || game.away_team_short || getCityName(game.away_team))} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`, pct: awaySpreadPct }
+
+    const mostPopularTotal = overPct >= underPct
+      ? { text: `Over ${totalDisplay}`, pct: overPct }
+      : { text: `Under ${totalDisplay}`, pct: underPct }
+
+    // Mobile label: abbreviation else city fallback
+    const awayLabel = isMobile
+      ? (awayTeam?.abbreviation || game.away_team_short || getCityName(game.away_team))
+      : (awayTeam?.city || getCityName(game.away_team))
+
+    const homeLabel = isMobile
+      ? (homeTeam?.abbreviation || game.home_team_short || getCityName(game.home_team))
+      : (homeTeam?.city || getCityName(game.home_team))
+
+    // Team colors for gradient background
+    const leftColor  = awayTeam?.primary_color || '#666'
+    const rightColor = homeTeam?.primary_color || '#999'
+
     return (
       <div 
-        className={`relative rounded-xl overflow-hidden shadow-lg border-4 ${
-          hasToken ? 'border-yellow-400' : 
-          !isAvailable ? 'border-gray-400' : 
-          'border-gray-300'
+        className={`relative rounded-2xl overflow-hidden shadow-lg border-4 ${
+          hasToken ? 'border-yellow-400 bg-yellow-50' :
+          !available ? 'border-gray-400 bg-gray-50' : 'border-gray-200'
         } hover:shadow-xl transition-all duration-300`}
       >
-        {/* Gradient Background using team colors */}
+        {/* Subtle team-color gradient behind content */}
         <div 
           className="absolute inset-0"
           style={{
-            background: `linear-gradient(135deg, ${awayTeam?.primary_color || '#666'} 0%, ${awayTeam?.primary_color || '#666'} 45%, ${homeTeam?.primary_color || '#999'} 55%, ${homeTeam?.primary_color || '#999'} 100%)`,
-            opacity: 0.1
+            background: `linear-gradient(135deg, ${leftColor} 0%, ${leftColor} 45%, ${rightColor} 55%, ${rightColor} 100%)`,
+            opacity: 0.08
           }}
         />
-        
-        {/* Content Container */}
-        <div className="relative bg-white/98 backdrop-blur p-3 md:p-4">
-          
-          {/* Header Row */}
+
+        <div className="relative bg-white/95 backdrop-blur p-4">
+          {/* Top row: time + open/closed + token */}
           <div className="flex justify-between items-start mb-3">
-            {/* Time & Status */}
             <div className="flex flex-col">
-              <div className="flex items-center space-x-1 text-gray-700">
-                <Clock className="w-3 h-3" />
-                <span className="text-[10px] md:text-xs pixel-font font-bold">
+              <div className="flex items-center space-x-2 text-gray-700">
+                <Clock className="w-4 h-4" />
+                <span className="text-xs pixel-font font-bold">
                   {new Date(game.scheduled_time).toLocaleTimeString('en-US', { 
-                    hour: 'numeric', 
-                    minute: '2-digit',
-                    timeZone: 'America/New_York'
+                    hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York'
                   })} ET
                 </span>
               </div>
-              <div className="flex items-center space-x-1 mt-1">
-                {isAvailable && contestStatus === 'active' ? (
+              <div className="flex items-center space-x-2 mt-1">
+                {available && contestStatus === 'active' ? (
                   <>
-                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-[9px] pixel-font text-green-600 font-bold">OPEN</span>
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                    <span className="text-[11px] pixel-font text-green-600 font-bold">OPEN</span>
                   </>
                 ) : (
                   <>
-                    <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
-                    <span className="text-[9px] pixel-font text-red-600 font-bold">CLOSED</span>
+                    <div className="w-2 h-2 bg-red-500 rounded-full" />
+                    <span className="text-[11px] pixel-font text-red-600 font-bold">CLOSED</span>
                   </>
                 )}
               </div>
             </div>
-            
-            {/* Token Button */}
-            {isAvailable && contestStatus === 'active' && (
+
+            {available && contestStatus === 'active' && (
               <button
                 onClick={() => handleTokenToggle(game.id)}
-                className={`flex items-center space-x-1 px-2 py-1 rounded-full text-[10px] md:text-xs pixel-font transition-all ${
-                  hasToken 
-                    ? 'bg-yellow-400 text-yellow-900 shadow-md' 
-                    : 'bg-gray-100 hover:bg-yellow-100 text-gray-700'
+                className={`flex items-center space-x-2 px-3 py-1 rounded-full text-xs pixel-font transition-all ${
+                  hasToken ? 'bg-yellow-400 text-yellow-900 shadow-md' : 'bg-gray-100 hover:bg-yellow-100 text-gray-700'
                 }`}
               >
-                <TokenIcon className="w-3 h-3" />
-                <span>{hasToken ? 'USED' : 'TOKEN'}</span>
+                <TokenIcon className="w-4 h-4" />
+                <span>{hasToken ? 'TOKEN USED' : 'USE TOKEN'}</span>
               </button>
             )}
           </div>
-          
-          {/* Teams Display */}
+
+          {/* Teams row with pixel logos + abbrev/city */}
           <div className="flex items-center justify-center mb-3">
-            {/* Away Team */}
-            <div className="flex items-center space-x-1 md:space-x-2 flex-1 justify-end">
+            <div className="flex items-center gap-2 flex-1 justify-end">
               {awayTeam?.logo_url && (
-                <img 
-                  src={awayTeam?.logo_url} 
-                  alt={awayTeam?.short_name}
-                  className="w-6 h-6 md:w-8 md:h-8"
+                <img
+                  src={awayTeam.logo_url}
+                  alt={awayTeam.short_name}
+                  className="w-8 h-8"
                   style={{ imageRendering: 'pixelated' }}
                 />
               )}
-              <span className="text-xs md:text-sm font-bold pixel-font" style={{ color: awayTeam?.primary_color || '#000' }}>
-                {isMobile ? (awayTeam?.abbreviation || game.away_team_short) : awayTeam?.city}
+              <span className="text-sm font-bold pixel-font" style={{ color: leftColor }}>
+                {awayLabel}
               </span>
             </div>
-            
-            {/* @ Symbol */}
-            <span className="mx-2 md:mx-3 text-gray-500 text-xs md:text-sm pixel-font">@</span>
-            
-            {/* Home Team */}
-            <div className="flex items-center space-x-1 md:space-x-2 flex-1">
-              <span className="text-xs md:text-sm font-bold pixel-font" style={{ color: homeTeam?.primary_color || '#000' }}>
-                {isMobile ? (homeTeam?.abbreviation || game.home_team_short) : homeTeam?.city}
+
+            <span className="mx-3 text-gray-500 text-sm pixel-font">@</span>
+
+            <div className="flex items-center gap-2 flex-1">
+              <span className="text-sm font-bold pixel-font" style={{ color: rightColor }}>
+                {homeLabel}
               </span>
               {homeTeam?.logo_url && (
-                <img 
-                  src={homeTeam?.logo_url} 
-                  alt={homeTeam?.short_name}
-                  className="w-6 h-6 md:w-8 md:h-8"
+                <img
+                  src={homeTeam.logo_url}
+                  alt={homeTeam.short_name}
+                  className="w-8 h-8"
                   style={{ imageRendering: 'pixelated' }}
                 />
               )}
             </div>
           </div>
-          
-          {/* Live Score Display */}
-          {isGameStarted && (
+
+          {/* Scores */}
+          {started && (
             <div className="text-center mb-3">
-              <div className="text-lg font-bold pixel-font">
-                <span className={game.away_score! > game.home_score! ? 'text-green-600' : 'text-gray-700'}>
-                  {game.away_score || 0}
+              <div className="text-xl font-bold pixel-font">
+                <span className={(game.away_score || 0) > (game.home_score || 0) ? 'text-green-600' : 'text-gray-700'}>
+                  {game.away_score ?? 0}
                 </span>
-                <span className="text-gray-500 mx-2">-</span>
-                <span className={game.home_score! > game.away_score! ? 'text-green-600' : 'text-gray-700'}>
-                  {game.home_score || 0}
+                <span className="text-gray-500 mx-3">-</span>
+                <span className={(game.home_score || 0) > (game.away_score || 0) ? 'text-green-600' : 'text-gray-700'}>
+                  {game.home_score ?? 0}
                 </span>
               </div>
               {game.status === 'in_progress' && (
-                <span className="text-[10px] pixel-font text-red-600 animate-pulse">LIVE</span>
+                <span className="text-[11px] pixel-font text-red-600 animate-pulse">LIVE</span>
               )}
               {game.status === 'final' && (
-                <span className="text-[10px] pixel-font text-gray-600">FINAL</span>
+                <span className="text-[11px] pixel-font text-gray-600">FINAL</span>
               )}
             </div>
           )}
-          
-          {/* Picks Grid */}
-          {!isGameStarted && isAvailable ? (
-            <div className="space-y-2 md:space-y-3">
+
+          {/* Picks */}
+          {!started && available ? (
+            <div className="space-y-3">
               {/* Spread */}
               <div>
-                <div className="text-center text-[10px] font-bold text-gray-500 mb-1 pixel-font">SPREAD</div>
+                <div className="text-center text-[11px] font-bold text-gray-500 mb-1 pixel-font">SPREAD</div>
                 <div className="grid grid-cols-2 gap-2">
                   <PickButton
-                    text={`${awayTeam?.abbreviation || game.away_team_short} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`}
+                    text={`${awayTeam?.abbreviation || game.away_team_short || getCityName(game.away_team)} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`}
                     isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.selection === 'away')}
-                    onClick={() => handlePickSelect(game.id, 'spread', 'away', 
-                      `${awayTeam?.abbreviation || game.away_team_short} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`, 
-                      awaySpread!.id
+                    onClick={() => awaySpread && handlePickSelect(
+                      game.id, 'spread', 'away',
+                      `${awayTeam?.abbreviation || game.away_team_short || getCityName(game.away_team)} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`,
+                      awaySpread.id
                     )}
-                    disabled={isGameDisabled}
+                    disabled={disabled || !awaySpread}
                     percentage={awaySpreadPct}
                   />
                   <PickButton
-                    text={`${homeTeam?.abbreviation || game.home_team_short} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`}
+                    text={`${homeTeam?.abbreviation || game.home_team_short || getCityName(game.home_team)} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`}
                     isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.selection === 'home')}
-                    onClick={() => handlePickSelect(game.id, 'spread', 'home',
-                      `${homeTeam?.abbreviation || game.home_team_short} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`,
-                      homeSpread!.id
+                    onClick={() => homeSpread && handlePickSelect(
+                      game.id, 'spread', 'home',
+                      `${homeTeam?.abbreviation || game.home_team_short || getCityName(game.home_team)} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`,
+                      homeSpread.id
                     )}
-                    disabled={isGameDisabled}
+                    disabled={disabled || !homeSpread}
                     percentage={homeSpreadPct}
                   />
                 </div>
               </div>
-              
+
               {/* Total */}
               <div>
-                <div className="text-center text-[10px] font-bold text-gray-500 mb-1 pixel-font">
+                <div className="text-center text-[11px] font-bold text-gray-500 mb-1 pixel-font">
                   {game.sport === 'MLB' ? 'TOTAL RUNS' : 'TOTAL POINTS'}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <PickButton
                     text={`Over ${totalDisplay}`}
                     isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'total' && p.selection === 'over')}
-                    onClick={() => handlePickSelect(game.id, 'total', 'over',
+                    onClick={() => overTotal && handlePickSelect(
+                      game.id, 'total', 'over',
                       `Over ${totalDisplay}`,
-                      overTotal!.id
+                      overTotal.id
                     )}
-                    disabled={isGameDisabled}
+                    disabled={disabled || !overTotal}
                     percentage={overPct}
                   />
                   <PickButton
                     text={`Under ${totalDisplay}`}
                     isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'total' && p.selection === 'under')}
-                    onClick={() => handlePickSelect(game.id, 'total', 'under',
+                    onClick={() => underTotal && handlePickSelect(
+                      game.id, 'total', 'under',
                       `Under ${totalDisplay}`,
-                      underTotal!.id
+                      underTotal.id
                     )}
-                    disabled={isGameDisabled}
+                    disabled={disabled || !underTotal}
                     percentage={underPct}
                   />
                 </div>
               </div>
             </div>
           ) : (
-            /* Show popular picks for closed games */
+            // Populars if closed
             <div className="space-y-3">
               <div className="text-center">
                 <div className="text-xs font-bold pixel-font text-gray-700 mb-2">MOST POPULAR</div>
@@ -728,11 +740,11 @@ export default function PerfectSlateGame() {
               </div>
             </div>
           )}
-          
-          {/* Token Indicator */}
+
+          {/* Token note */}
           {hasToken && (
             <div className="mt-3 text-center">
-              <span className="text-[10px] text-yellow-700 pixel-font animate-pulse">
+              <span className="text-[11px] text-yellow-700 pixel-font animate-pulse">
                 TOKEN APPLIED - NO PICKS NEEDED
               </span>
             </div>
@@ -742,49 +754,51 @@ export default function PerfectSlateGame() {
     )
   }
 
-  const PickButton = ({ text, isSelected, onClick, disabled, percentage }: any) => {
-    return (
-      <button
-        onClick={onClick}
-        disabled={disabled}
-        className={`
-          relative px-2 md:px-3 py-1.5 md:py-2 rounded-lg pixel-font text-[10px] md:text-xs font-bold transition-all duration-200 overflow-hidden
-          ${isSelected 
-            ? 'bg-yellow-400 border-2 border-yellow-600 text-yellow-900 shadow-lg' 
-            : disabled
-            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            : 'bg-gray-100 hover:bg-blue-100 text-gray-700 hover:shadow-md cursor-pointer'
-          }
-        `}
-      >
-        {/* Percentage Background */}
-        {percentage !== undefined && (
-          <div 
-            className="absolute left-0 top-0 bottom-0 bg-black opacity-5"
-            style={{ width: `${percentage}%` }}
-          />
+  const PickButton = ({ text, isSelected, onClick, disabled, percentage }:{
+    text: string
+    isSelected: boolean
+    onClick: () => void
+    disabled: boolean
+    percentage?: number
+  }) => (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`
+        relative px-3 py-2 rounded-lg pixel-font text-xs font-bold transition-all duration-200 overflow-hidden
+        ${isSelected 
+          ? 'bg-yellow-400 border-2 border-yellow-600 text-yellow-900 shadow-lg' 
+          : disabled
+          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+          : 'bg-gray-100 hover:bg-blue-100 text-gray-700 hover:shadow-md'
+        }
+      `}
+    >
+      {typeof percentage === 'number' && (
+        <div 
+          className="absolute left-0 top-0 bottom-0 bg-black opacity-10"
+          style={{ width: `${percentage}%` }}
+        />
+      )}
+      <span className="relative z-10 flex items-center justify-center gap-1">
+        {isSelected && <Zap className="w-3 h-3" />}
+        <span className="truncate">{text}</span>
+        {typeof percentage === 'number' && (
+          <span className="text-[10px] opacity-75">({percentage}%)</span>
         )}
-        
-        {/* Content */}
-        <span className="relative z-10 flex items-center justify-center space-x-1">
-          {isSelected && <Zap className="w-2.5 h-2.5 md:w-3 md:h-3" />}
-          <span className="truncate">{text}</span>
-          {percentage !== undefined && (
-            <span className="text-[9px] opacity-75 ml-1">({percentage}%)</span>
-          )}
-        </span>
-      </button>
-    )
-  }
+      </span>
+    </button>
+  )
 
+  /* -------- Loading -------- */
   if (isLoading) {
     return (
       <div className="min-h-screen bg-sky-400 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-bounce mb-4">
-            <CircleDollarSign className="w-12 h-12 text-white" />
+            <CircleDollarSign className="w-16 h-16 text-white" />
           </div>
-          <h2 className="text-lg font-bold text-white pixel-font">LOADING...</h2>
+          <h2 className="text-2xl font-bold text-white pixel-font">LOADING...</h2>
         </div>
       </div>
     )
@@ -792,10 +806,7 @@ export default function PerfectSlateGame() {
 
   const totalPicks = selectedPicks.length + gamesWithTokens.size
   const today = new Date().toLocaleDateString('en-US', { 
-    weekday: 'long', 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
   })
 
   return (
@@ -806,44 +817,38 @@ export default function PerfectSlateGame() {
           to { transform: translateX(calc(100vw + 200px)); }
         }
       `}</style>
-      
-      {/* Sky Blue Top Section */}
-      <div className="bg-sky-400 absolute top-0 left-0 right-0 h-[450px]"></div>
-      
-      {/* Pixelated Clouds */}
+
+      {/* Top sky */}
+      <div className="bg-sky-400 absolute top-0 left-0 right-0 h-[450px]" />
+
+      {/* Pixel clouds */}
       <div className="absolute top-0 left-0 right-0 h-[450px] overflow-hidden pointer-events-none">
-        {[...Array(8)].map((_, i) => (
-          <PixelatedCloud key={i} index={i} />
-        ))}
+        {Array.from({ length: 8 }).map((_, i) => <PixelatedCloud key={i} index={i} />)}
       </div>
-      
-      {/* Green Field Bottom Section */}
-      <div className="bg-green-500 absolute top-[450px] left-0 right-0 bottom-0"></div>
-      
-      {/* Navigation */}
+
+      {/* Bottom field */}
+      <div className="bg-green-500 absolute top-[450px] left-0 right-0 bottom-0" />
+
+      {/* Nav */}
       <nav className="relative z-20">
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex justify-between items-center">
-            {/* Sport Selector */}
+            {/* Sport dropdown */}
             <div className="relative">
               <button
-                onClick={() => setShowSportDropdown(!showSportDropdown)}
-                className="flex items-center space-x-1 text-white pixel-font text-xs md:text-sm hover:text-yellow-300 transition-colors"
+                onClick={() => setShowSportDropdown(s => !s)}
+                className="flex items-center gap-2 text-white pixel-font text-sm md:text-base hover:text-yellow-300 transition-colors"
               >
                 <span>PERFECT SLATE {selectedSport}</span>
-                <ChevronDown className="w-3 h-3 md:w-4 md:h-4" />
+                <ChevronDown className="w-4 h-4 md:w-5 md:h-5" />
               </button>
-              
               {showSportDropdown && (
-                <div className="absolute top-full left-0 mt-2 bg-white rounded-lg shadow-xl overflow-hidden z-50">
-                  {['MLB', 'NFL', 'NCAAF'].map(sport => (
+                <div className="absolute top-full left-0 mt-2 bg-white rounded-xl shadow-xl overflow-hidden z-50">
+                  {(['NFL','NCAAF','MLB'] as Sport[]).map(sport => (
                     <button
                       key={sport}
-                      onClick={() => {
-                        setSelectedSport(sport as any)
-                        setShowSportDropdown(false)
-                      }}
-                      className="block w-full text-left px-4 py-2 pixel-font text-[10px] md:text-xs hover:bg-blue-50 transition-colors"
+                      onClick={() => { setSelectedSport(sport); setShowSportDropdown(false) }}
+                      className="block w-full text-left px-5 py-3 pixel-font text-xs md:text-sm hover:bg-blue-50 transition-colors"
                     >
                       {sport}
                     </button>
@@ -851,75 +856,62 @@ export default function PerfectSlateGame() {
                 </div>
               )}
             </div>
-            
-            {/* Desktop Nav Links */}
-            <div className="hidden md:flex items-center space-x-4">
-              <button className="text-white pixel-font text-xs hover:text-yellow-300 transition-colors flex items-center space-x-1">
-                <FileText className="w-3 h-3" />
+
+            {/* Desktop links */}
+            <div className="hidden md:flex items-center gap-5">
+              <button className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center gap-2">
+                <FileText className="w-4 h-4" />
                 <span>RULES</span>
               </button>
-              <button className="text-white pixel-font text-xs hover:text-yellow-300 transition-colors flex items-center space-x-1">
-                <BarChart3 className="w-3 h-3" />
+              <button className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center gap-2">
+                <BarChart3 className="w-4 h-4" />
                 <span>LEADERBOARDS</span>
               </button>
               {user ? (
                 <button 
                   onClick={() => router.push('/profile')}
-                  className="text-white pixel-font text-xs hover:text-yellow-300 transition-colors flex items-center space-x-1"
+                  className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center gap-2"
                 >
-                  <User className="w-3 h-3" />
+                  <User className="w-4 h-4" />
                   <span>PROFILE</span>
                 </button>
               ) : (
                 <button 
-                  onClick={() => {
-                    setAuthMode('signup')
-                    setShowAuthModal(true)
-                  }}
-                  className="bg-yellow-400 text-yellow-900 pixel-font text-xs hover:bg-yellow-300 transition-colors flex items-center space-x-1 px-3 py-1.5 rounded-lg font-bold"
+                  onClick={() => { setAuthMode('signup'); setShowAuthModal(true) }}
+                  className="bg-yellow-400 text-yellow-900 pixel-font text-sm hover:bg-yellow-300 transition-colors flex items-center gap-2 px-4 py-2 rounded-lg font-bold"
                 >
-                  <Zap className="w-3 h-3" />
+                  <Zap className="w-4 h-4" />
                   <span>SIGN UP</span>
                 </button>
               )}
             </div>
-            
-            {/* Mobile Menu Button */}
-            <button 
-              onClick={() => setShowMobileMenu(!showMobileMenu)}
-              className="md:hidden text-white"
-            >
-              <Menu className="w-5 h-5" />
+
+            {/* Mobile menu button */}
+            <button onClick={() => setShowMobileMenu(m => !m)} className="md:hidden text-white">
+              <Menu className="w-6 h-6" />
             </button>
           </div>
-          
-          {/* Mobile Menu */}
+
+          {/* Mobile menu */}
           {showMobileMenu && (
             <div className="md:hidden mt-3 pb-3 border-t border-blue-300 pt-3">
-              <button className="block w-full text-left text-white pixel-font text-xs py-1.5 hover:text-yellow-300 transition-colors">
+              <button className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">
                 RULES
               </button>
-              <button className="block w-full text-left text-white pixel-font text-xs py-1.5 hover:text-yellow-300 transition-colors">
+              <button className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">
                 LEADERBOARDS
               </button>
               {user ? (
                 <button 
-                  onClick={() => {
-                    router.push('/profile')
-                    setShowMobileMenu(false)
-                  }}
-                  className="block w-full text-left text-white pixel-font text-xs py-1.5 hover:text-yellow-300 transition-colors"
+                  onClick={() => { router.push('/profile'); setShowMobileMenu(false) }}
+                  className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors"
                 >
                   PROFILE
                 </button>
               ) : (
                 <button 
-                  onClick={() => {
-                    setAuthMode('signup')
-                    setShowAuthModal(true)
-                    setShowMobileMenu(false)
-                  }}
-                  className="block w-full text-left text-yellow-300 pixel-font text-xs py-1.5 hover:text-yellow-400 transition-colors font-bold"
+                  onClick={() => { setAuthMode('signup'); setShowAuthModal(true); setShowMobileMenu(false) }}
+                  className="block w-full text-left text-yellow-300 pixel-font text-sm py-2 hover:text-yellow-400 transition-colors font-bold"
                 >
                   SIGN UP TO PLAY
                 </button>
@@ -928,178 +920,160 @@ export default function PerfectSlateGame() {
           )}
         </div>
       </nav>
-      
-      {/* Header Content */}
+
+      {/* Header content */}
       <div className="relative z-10 pb-12">
         <div className="text-center pt-6">
           {/* Prize Pool */}
-          <button
-            onClick={() => setShowPrizeHistory(true)}
-            className="inline-block mb-4 group"
-          >
-            <div className="bg-yellow-400 rounded-xl px-4 md:px-6 py-2 md:py-3 shadow-xl transform group-hover:scale-105 transition-all duration-300">
-              <div className="flex items-center space-x-2">
-                <Coins className="w-5 h-5 md:w-6 md:h-6 text-yellow-700" />
-                <span className="text-lg md:text-xl font-bold pixel-font text-yellow-900">
+          <button onClick={() => setShowPrizeHistory(true)} className="inline-block mb-4 group">
+            <div className="bg-yellow-400 rounded-xl px-5 md:px-6 py-3 md:py-3.5 shadow-xl transform group-hover:scale-105 transition-all duration-300">
+              <div className="flex items-center gap-2">
+                <Coins className="w-6 h-6 md:w-7 md:h-7 text-yellow-700" />
+                <span className="text-xl md:text-2xl font-bold pixel-font text-yellow-900">
                   ${currentContest?.final_prize_pool.toLocaleString() || '0'}
                 </span>
-                <AlertCircle className="w-3 h-3 md:w-4 md:h-4 text-yellow-700" />
+                <AlertCircle className="w-4 h-4 md:w-5 md:h-5 text-yellow-700" />
               </div>
             </div>
           </button>
-          
+
           {/* Stats */}
-          <div className="flex justify-center items-center space-x-4 md:space-x-6 text-white mb-6">
+          <div className="flex justify-center items-center gap-6 md:gap-8 text-white mb-6">
             <div>
-              <div className="flex items-center justify-center space-x-1 mb-1">
-                <Users className="w-3 h-3 md:w-4 md:h-4" />
-                <span className="text-base md:text-lg font-bold pixel-font">
+              <div className="flex items-center justify-center gap-2 mb-1">
+                <Users className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="text-lg md:text-xl font-bold pixel-font">
                   {currentContest?.total_entries || 0}
                 </span>
               </div>
-              <div className="text-[10px] pixel-font opacity-90">ENTRIES</div>
+              <div className="text-[11px] pixel-font opacity-90">ENTRIES</div>
             </div>
-            
             <div>
-              <div className="flex items-center justify-center space-x-1 mb-1">
-                <Clock className="w-3 h-3 md:w-4 md:h-4" />
-                <span className="text-base md:text-lg font-bold pixel-font">
+              <div className="flex items-center justify-center gap-2 mb-1">
+                <Clock className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="text-lg md:text-xl font-bold pixel-font">
                   {timeRemaining}
                 </span>
               </div>
-              <div className="text-[10px] pixel-font opacity-90">
-                {contestStatus === 'pre-contest' ? 'OPENS IN' : 
-                 contestStatus === 'active' ? 'CLOSES IN' : 
-                 'CONTEST LOCKED'}
+              <div className="text-[11px] pixel-font opacity-90">
+                {contestStatus === 'pre-contest' ? 'OPENS IN' : contestStatus === 'active' ? 'CLOSES IN' : 'CONTEST LOCKED'}
               </div>
             </div>
           </div>
-          
-          {/* Today's Challenge */}
+
+          {/* Today box */}
           <div className="max-w-4xl mx-auto px-4">
-            <div className="bg-white/90 backdrop-blur rounded-xl p-3 md:p-4 shadow-xl border-3 border-yellow-400">
+            <div className="bg-white/90 backdrop-blur rounded-xl p-3 md:p-4 shadow-xl border-4 border-yellow-400">
               <h2 className="text-base md:text-lg font-bold pixel-font text-gray-800 mb-1">
                 SELECT YOUR PERFECT 10
               </h2>
-              <div className="flex items-center justify-center space-x-1 text-gray-600">
-                <Calendar className="w-3 h-3 md:w-4 md:h-4" />
-                <span className="text-xs md:text-sm pixel-font">{today}</span>
+              <div className="flex items-center justify-center gap-2 text-gray-600">
+                <Calendar className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="text-sm md:text-base pixel-font">{today}</span>
               </div>
               {contestStatus === 'pre-contest' && (
-                <div className="mt-2 text-xs pixel-font text-orange-600">
-                  Contest opens at 7:00 AM ET
-                </div>
+                <div className="mt-2 text-xs pixel-font text-orange-600">Contest opens at 7:00 AM ET</div>
               )}
               {contestStatus === 'locked' && (
-                <div className="mt-2 text-xs pixel-font text-red-600">
-                  Contest is locked - games in progress
-                </div>
+                <div className="mt-2 text-xs pixel-font text-red-600">Contest is locked - games in progress</div>
               )}
             </div>
           </div>
         </div>
       </div>
-      
-      {/* Games Grid */}
+
+      {/* Games list */}
       <div className="relative z-10 max-w-5xl mx-auto px-4 pb-24 -mt-8">
         <div className="space-y-3">
-          {games.map(game => (
-            <GameCard key={game.id} game={game} />
-          ))}
+          {games.map(game => <GameCard key={game.id} game={game} />)}
         </div>
       </div>
-      
-      {/* Floating Pick Counter */}
-      {(totalPicks > 0) && !isSubmitted && (
+
+      {/* Floating pick counter */}
+      {totalPicks > 0 && !isSubmitted && (
         <div className="fixed bottom-4 right-4 z-50">
           <button
             onClick={() => setShowSlateModal(true)}
-            className={`${totalPicks === 10 ? 'bg-green-400' : totalPicks > 0 ? 'bg-yellow-400' : 'bg-white'} rounded-full shadow-xl p-3 md:p-4 hover:scale-110 transition-all duration-300 ${totalPicks === 10 ? 'animate-pulse' : ''}`}
+            className={`${totalPicks === 10 ? 'bg-green-400' : 'bg-yellow-400'} rounded-full shadow-xl p-4 hover:scale-110 transition-all duration-300 ${totalPicks === 10 ? 'animate-pulse' : ''}`}
           >
             <div className="text-center">
-              <div className="text-lg md:text-xl font-bold pixel-font text-gray-800">
-                {totalPicks}
-              </div>
-              <div className="text-[10px] pixel-font text-gray-600">PICKS</div>
+              <div className="text-xl md:text-2xl font-bold pixel-font text-gray-800">{totalPicks}</div>
+              <div className="text-[11px] pixel-font text-gray-600">PICKS</div>
             </div>
             {totalPicks === 10 && (
-              <div className="absolute -top-1 -right-1 animate-bounce">
-                <div className="bg-green-400 rounded-full p-1">
-                  <Trophy className="w-3 h-3 text-white" />
+              <div className="absolute -top-2 -right-2 animate-bounce">
+                <div className="bg-green-400 rounded-full p-2">
+                  <Trophy className="w-4 h-4 text-white" />
                 </div>
               </div>
             )}
           </button>
-          
+
           {totalPicks === 10 && (
-            <div className="absolute -top-12 right-0 bg-green-500 rounded-lg px-3 py-1 shadow-lg animate-pulse">
-              <span className="text-[10px] pixel-font text-white font-bold">READY!</span>
+            <div className="absolute -top-14 right-0 bg-green-500 rounded-lg px-3 py-1 shadow-lg animate-pulse">
+              <span className="text-[11px] pixel-font text-white font-bold">READY!</span>
             </div>
           )}
         </div>
       )}
-      
-      {/* Slate Modal */}
+
+      {/* Slate modal */}
       {showSlateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-4 md:p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-5 md:p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-base md:text-lg font-bold pixel-font">
-                YOUR SLATE ({totalPicks}/10)
-              </h3>
-              <button onClick={() => setShowSlateModal(false)}>
-                <X className="w-5 h-5" />
-              </button>
+              <h3 className="text-base md:text-lg font-bold pixel-font">YOUR SLATE ({totalPicks}/10)</h3>
+              <button onClick={() => setShowSlateModal(false)}><X className="w-5 h-5" /></button>
             </div>
-            
-            {/* Token Balance */}
+
             {user && (
               <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3 mb-4">
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-bold pixel-font">TOKEN BALANCE:</span>
                   <span className="text-base font-bold pixel-font text-yellow-700">{tokenBalance}</span>
                 </div>
-                <div className="text-[10px] pixel-font mt-1 text-gray-600">
+                <div className="text-[11px] pixel-font mt-1 text-gray-600">
                   Using {gamesWithTokens.size} token{gamesWithTokens.size !== 1 ? 's' : ''} this slate
                 </div>
               </div>
             )}
-            
-            {/* Picks List */}
+
+            {/* Picks chosen */}
             <div className="space-y-2 mb-4">
-              {selectedPicks.map((pick, index) => (
-                <div key={index} className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
+              {selectedPicks.map((pick, idx) => (
+                <div key={idx} className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
                   <span className="text-xs font-bold pixel-font">{pick.displayText}</span>
-                  <button onClick={() => removePick(index)}>
-                    <Trash2 className="w-3 h-3 text-red-500 hover:text-red-700" />
+                  <button onClick={() => removePick(idx)}>
+                    <Trash2 className="w-4 h-4 text-red-500 hover:text-red-700" />
                   </button>
                 </div>
               ))}
-              
-              {/* Token Games */}
-              {Array.from(gamesWithTokens).map((gameId) => {
-                const game = games.find(g => g.id === gameId)
-                if (!game) return null
-                const homeTeam? = teams[game.home_team] || {}
-                const awayTeam? = teams[game.away_team] || {}
+
+              {/* Token games */}
+              {Array.from(gamesWithTokens).map(gameId => {
+                const g = games.find(x => x.id === gameId)
+                if (!g) return null
+                const ht = teamsMap[g.home_team]
+                const at = teamsMap[g.away_team]
+                const left = at?.abbreviation || g.away_team_short || getCityName(g.away_team)
+                const right = ht?.abbreviation || g.home_team_short || getCityName(g.home_team)
                 return (
                   <div key={`token-${gameId}`} className="bg-yellow-50 rounded-lg p-3 flex justify-between items-center">
-                    <div className="flex items-center space-x-1">
-                      <TokenIcon className="w-3 h-3 text-yellow-600" />
+                    <div className="flex items-center gap-2">
+                      <TokenIcon className="w-4 h-4 text-yellow-600" />
                       <span className="text-xs font-bold pixel-font">
-                        TOKEN: {awayTeam?.abbreviation || game.away_team_short} @ {homeTeam?.abbreviation || game.home_team_short}
+                        TOKEN: {left} @ {right}
                       </span>
                     </div>
                     <button onClick={() => handleTokenToggle(gameId)}>
-                      <Trash2 className="w-3 h-3 text-red-500 hover:text-red-700" />
+                      <Trash2 className="w-4 h-4 text-red-500 hover:text-red-700" />
                     </button>
                   </div>
                 )
               })}
             </div>
-            
-            {/* Actions */}
-            <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+
+            <div className="flex flex-col sm:flex-row gap-2">
               <button
                 onClick={() => setShowSlateModal(false)}
                 className="flex-1 bg-gray-200 hover:bg-gray-300 py-2 px-3 rounded-lg font-bold text-xs pixel-font transition-colors"
@@ -1118,18 +1092,16 @@ export default function PerfectSlateGame() {
           </div>
         </div>
       )}
-      
-      {/* Confirm Modal */}
+
+      {/* Confirm modal */}
       {showConfirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-4 md:p-6 max-w-sm w-full">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-5 md:p-6 max-w-sm w-full">
             <div className="text-center">
               <Trophy className="w-12 h-12 mx-auto mb-3 text-yellow-500" />
               <h3 className="text-base font-bold pixel-font mb-3">LOCK IT IN?</h3>
-              <p className="text-xs pixel-font text-gray-700 mb-4">
-                This slate is FINAL! No changes allowed!
-              </p>
-              <div className="flex space-x-2">
+              <p className="text-xs pixel-font text-gray-700 mb-4">This slate is FINAL! No changes allowed!</p>
+              <div className="flex gap-2">
                 <button
                   onClick={() => setShowConfirmModal(false)}
                   className="flex-1 bg-gray-200 hover:bg-gray-300 py-2 px-3 rounded-lg font-bold text-xs pixel-font transition-colors"
@@ -1147,59 +1119,51 @@ export default function PerfectSlateGame() {
           </div>
         </div>
       )}
-      
-      {/* Success Modal */}
+
+      {/* Success modal */}
       {showSuccessModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-4 md:p-6">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-5 md:p-6">
             <div className="text-center">
               <div className="mb-3 animate-bounce">
                 <Trophy className="w-12 h-12 mx-auto text-yellow-500" />
               </div>
               <h3 className="text-lg font-bold pixel-font mb-2">SLATE LOCKED!</h3>
-              <p className="text-xs pixel-font text-gray-700 mb-3">
-                Good luck! Check back after games end.
-              </p>
+              <p className="text-xs pixel-font text-gray-700 mb-3">Good luck! Check back after games end.</p>
               <button
                 onClick={() => setShowSuccessModal(false)}
                 className="bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded-lg text-white font-bold pixel-font text-xs transition-colors"
               >
-                LET'S GO!
+                LET&apos;S GO!
               </button>
             </div>
           </div>
         </div>
       )}
-      
-      {/* Auth Modal */}
+
+      {/* Auth modal */}
       {showAuthModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-sm w-full shadow-2xl border-3 border-gray-800 relative overflow-hidden max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-sm w-full shadow-2xl border-4 border-gray-800 relative overflow-hidden max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowAuthModal(false)}
-              className="absolute top-2 right-2 text-gray-500 hover:text-gray-700 z-10"
+              className="absolute top-3 right-3 text-gray-500 hover:text-gray-700 z-10"
             >
-              <X className="w-4 h-4" />
+              <X className="w-5 h-5" />
             </button>
-            
-            <div className="relative bg-gradient-to-b from-green-500 to-green-600 p-5 text-center">
-              <div className="flex justify-center mb-2">
-                <Zap className="w-8 h-8 text-yellow-300" />
+
+            <div className="relative bg-gradient-to-b from-green-500 to-green-600 p-6 text-center">
+              <div className="flex justify-center mb-3">
+                <Zap className="w-10 h-10 text-yellow-300" />
               </div>
-              <h2 className="text-base font-bold text-white pixel-font mb-2">
-                SIGN UP TO PLAY
-              </h2>
-              <p className="text-yellow-300 text-[10px] pixel-font mb-1">
-                Win real cash prizes daily
-              </p>
-              <p className="text-white text-[10px] pixel-font opacity-90">
-                100% FREE to play
-              </p>
+              <h2 className="text-xl font-bold text-white pixel-font mb-2">SIGN UP TO PLAY</h2>
+              <p className="text-yellow-300 text-xs pixel-font mb-1">Win real cash prizes daily</p>
+              <p className="text-white text-xs pixel-font opacity-90">100% FREE to play</p>
             </div>
-            
+
             <div className="p-4">
-              <AuthForm 
-                mode={authMode} 
+              <AuthForm
+                mode={authMode}
                 onModeChange={setAuthMode}
                 onSuccess={() => {
                   setShowAuthModal(false)
@@ -1211,59 +1175,51 @@ export default function PerfectSlateGame() {
           </div>
         </div>
       )}
-      
-      {/* Email Verification Success Modal */}
+
+      {/* Verification success */}
       {showVerificationSuccess && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl border-3 border-green-500 relative overflow-hidden">
-            <div className="relative bg-gradient-to-b from-green-500 to-green-600 p-6 text-center">
-              <div className="mb-3">
-                <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-full mb-3">
-                  <CheckCircle className="w-10 h-10 text-green-500" />
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl border-4 border-green-500 relative overflow-hidden">
+            <div className="relative bg-gradient-to-b from-green-500 to-green-600 p-8 text-center">
+              <div className="mb-4">
+                <div className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-full mb-4">
+                  <CheckCircle className="w-12 h-12 text-green-500" />
                 </div>
               </div>
-              <h2 className="text-lg font-bold text-white pixel-font mb-2">
-                EMAIL VERIFIED!
-              </h2>
-              <p className="text-white text-xs pixel-font mb-1">
-                Your email has been confirmed!
-              </p>
-              <p className="text-yellow-300 text-xs pixel-font">
+              <h2 className="text-2xl font-bold text-white pixel-font mb-3">EMAIL VERIFIED!</h2>
+              <p className="text-white text-sm pixel-font mb-2">Your email has been confirmed!</p>
+              <p className="text-yellow-300 text-sm pixel-font">
                 {user ? 'You can now play Perfect Slate' : 'Please sign in to start playing'}
               </p>
             </div>
-            
-            <div className="p-5 text-center">
-              <p className="text-gray-600 text-xs pixel-font mb-4 italic">
+
+            <div className="p-6 text-center">
+              <p className="text-gray-600 text-sm pixel-font mb-6 italic">
                 "Good luck out there, champ! 🏆"
               </p>
-              
+
               {user ? (
                 <button
                   onClick={() => setShowVerificationSuccess(false)}
-                  className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg pixel-font text-xs transition-all transform hover:scale-105 shadow-lg flex items-center justify-center space-x-2"
+                  className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-6 rounded-lg pixel-font text-lg transition-all transform hover:scale-105 shadow-lg flex items-center justify-center gap-3"
                 >
-                  <Trophy className="w-4 h-4" />
+                  <Trophy className="w-6 h-6" />
                   <span>PLAY NOW!</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowRight className="w-6 h-6" />
                 </button>
               ) : (
                 <button
-                  onClick={() => {
-                    setShowVerificationSuccess(false)
-                    setShowAuthModal(true)
-                    setAuthMode('signin')
-                  }}
-                  className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg pixel-font text-xs transition-all transform hover:scale-105 shadow-lg flex items-center justify-center space-x-2"
+                  onClick={() => { setShowVerificationSuccess(false); setShowAuthModal(true); setAuthMode('signin') }}
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-4 px-6 rounded-lg pixel-font text-lg transition-all transform hover:scale-105 shadow-lg flex items-center justify-center gap-3"
                 >
-                  <LogOut className="w-4 h-4" />
+                  <LogOut className="w-6 h-6" />
                   <span>SIGN IN TO PLAY</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowRight className="w-6 h-6" />
                 </button>
               )}
-              
-              <div className="mt-3 flex items-center justify-center space-x-1 text-[10px] text-gray-500 pixel-font">
-                <Zap className="w-3 h-3 text-yellow-500" />
+
+              <div className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-500 pixel-font">
+                <Zap className="w-4 h-4 text-yellow-500" />
                 <span>You've earned your first free token!</span>
               </div>
             </div>
