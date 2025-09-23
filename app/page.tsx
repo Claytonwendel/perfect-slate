@@ -496,8 +496,8 @@ export default function PerfectSlateGame() {
     const isGameStarted = game.status === 'in_progress' || game.status === 'final'
     
     // Get team data
-    const homeTeam = teams[game.home_team] || {}
-    const awayTeam = teams[game.away_team] || {}
+    const homeTeam? = teams[game.home_team] || {}
+    const awayTeam? = teams[game.away_team] || {}
     
     // Check if on mobile
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 640
@@ -518,8 +518,8 @@ export default function PerfectSlateGame() {
     
     // Find most popular picks for closed games
     const mostPopularSpread = homeSpreadPct >= awaySpreadPct ? 
-      { text: `${homeTeam.short_name || game.home_team_short} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`, pct: homeSpreadPct } :
-      { text: `${awayTeam.short_name || game.away_team_short} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`, pct: awaySpreadPct }
+      { text: `${homeTeam?.short_name || game.home_team_short} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`, pct: homeSpreadPct } :
+      { text: `${awayTeam?.short_name || game.away_team_short} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`, pct: awaySpreadPct }
     
     const mostPopularTotal = overPct >= underPct ?
       { text: `Over ${totalDisplay}`, pct: overPct } :
@@ -537,7 +537,7 @@ export default function PerfectSlateGame() {
         <div 
           className="absolute inset-0"
           style={{
-            background: `linear-gradient(135deg, ${awayTeam.primary_color || '#666'} 0%, ${awayTeam.primary_color || '#666'} 45%, ${homeTeam.primary_color || '#999'} 55%, ${homeTeam.primary_color || '#999'} 100%)`,
+            background: `linear-gradient(135deg, ${awayTeam?.primary_color || '#666'} 0%, ${awayTeam?.primary_color || '#666'} 45%, ${homeTeam?.primary_color || '#999'} 55%, ${homeTeam?.primary_color || '#999'} 100%)`,
             opacity: 0.1
           }}
         />
@@ -594,16 +594,16 @@ export default function PerfectSlateGame() {
           <div className="flex items-center justify-center mb-3">
             {/* Away Team */}
             <div className="flex items-center space-x-1 md:space-x-2 flex-1 justify-end">
-              {awayTeam.logo_url && (
+              {awayTeam?.logo_url && (
                 <img 
-                  src={awayTeam.logo_url} 
-                  alt={awayTeam.short_name}
+                  src={awayTeam?.logo_url} 
+                  alt={awayTeam?.short_name}
                   className="w-6 h-6 md:w-8 md:h-8"
                   style={{ imageRendering: 'pixelated' }}
                 />
               )}
-              <span className="text-xs md:text-sm font-bold pixel-font" style={{ color: awayTeam.primary_color || '#000' }}>
-                {isMobile ? (awayTeam.abbreviation || game.away_team_short) : awayTeam.city}
+              <span className="text-xs md:text-sm font-bold pixel-font" style={{ color: awayTeam?.primary_color || '#000' }}>
+                {isMobile ? (awayTeam?.abbreviation || game.away_team_short) : awayTeam?.city}
               </span>
             </div>
             
@@ -612,13 +612,13 @@ export default function PerfectSlateGame() {
             
             {/* Home Team */}
             <div className="flex items-center space-x-1 md:space-x-2 flex-1">
-              <span className="text-xs md:text-sm font-bold pixel-font" style={{ color: homeTeam.primary_color || '#000' }}>
-                {isMobile ? (homeTeam.abbreviation || game.home_team_short) : homeTeam.city}
+              <span className="text-xs md:text-sm font-bold pixel-font" style={{ color: homeTeam?.primary_color || '#000' }}>
+                {isMobile ? (homeTeam?.abbreviation || game.home_team_short) : homeTeam?.city}
               </span>
-              {homeTeam.logo_url && (
+              {homeTeam?.logo_url && (
                 <img 
-                  src={homeTeam.logo_url} 
-                  alt={homeTeam.short_name}
+                  src={homeTeam?.logo_url} 
+                  alt={homeTeam?.short_name}
                   className="w-6 h-6 md:w-8 md:h-8"
                   style={{ imageRendering: 'pixelated' }}
                 />
@@ -655,20 +655,20 @@ export default function PerfectSlateGame() {
                 <div className="text-center text-[10px] font-bold text-gray-500 mb-1 pixel-font">SPREAD</div>
                 <div className="grid grid-cols-2 gap-2">
                   <PickButton
-                    text={`${awayTeam.abbreviation || game.away_team_short} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`}
+                    text={`${awayTeam?.abbreviation || game.away_team_short} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`}
                     isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.selection === 'away')}
                     onClick={() => handlePickSelect(game.id, 'spread', 'away', 
-                      `${awayTeam.abbreviation || game.away_team_short} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`, 
+                      `${awayTeam?.abbreviation || game.away_team_short} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`, 
                       awaySpread!.id
                     )}
                     disabled={isGameDisabled}
                     percentage={awaySpreadPct}
                   />
                   <PickButton
-                    text={`${homeTeam.abbreviation || game.home_team_short} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`}
+                    text={`${homeTeam?.abbreviation || game.home_team_short} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`}
                     isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.selection === 'home')}
                     onClick={() => handlePickSelect(game.id, 'spread', 'home',
-                      `${homeTeam.abbreviation || game.home_team_short} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`,
+                      `${homeTeam?.abbreviation || game.home_team_short} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`,
                       homeSpread!.id
                     )}
                     disabled={isGameDisabled}
@@ -1080,14 +1080,14 @@ export default function PerfectSlateGame() {
               {Array.from(gamesWithTokens).map((gameId) => {
                 const game = games.find(g => g.id === gameId)
                 if (!game) return null
-                const homeTeam = teams[game.home_team] || {}
-                const awayTeam = teams[game.away_team] || {}
+                const homeTeam? = teams[game.home_team] || {}
+                const awayTeam? = teams[game.away_team] || {}
                 return (
                   <div key={`token-${gameId}`} className="bg-yellow-50 rounded-lg p-3 flex justify-between items-center">
                     <div className="flex items-center space-x-1">
                       <TokenIcon className="w-3 h-3 text-yellow-600" />
                       <span className="text-xs font-bold pixel-font">
-                        TOKEN: {awayTeam.abbreviation || game.away_team_short} @ {homeTeam.abbreviation || game.home_team_short}
+                        TOKEN: {awayTeam?.abbreviation || game.away_team_short} @ {homeTeam?.abbreviation || game.home_team_short}
                       </span>
                     </div>
                     <button onClick={() => handleTokenToggle(gameId)}>
