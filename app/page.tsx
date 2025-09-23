@@ -1,32 +1,32 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { 
+import {
   Users, DollarSign, Trophy, Clock, X, Trash2,
-  ChevronDown, AlertCircle, FileText, BarChart3, 
+  ChevronDown, AlertCircle, FileText, BarChart3,
   User, Coins, Zap, Menu, CircleDollarSign, Calendar,
   CheckCircle, LogOut, ArrowRight
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import AuthForm from '@/components/AuthForm'
 
-/* =========================
-   Types
-========================= */
 type Sport = 'NFL' | 'NCAAF' | 'MLB'
 
 type Team = {
   id: number
   sport: Sport
-  full_name: string
-  city: string
-  nickname: string
-  short_name: string
-  abbreviation: string
+  // Your table fields:
+  team_name: string        // e.g., "Seahawks"
+  city: string             // e.g., "Seattle"
+  abbreviation: string     // e.g., "SEA"
   primary_color: string
   secondary_color: string
   logo_url: string
+  pixelated_logo_url?: string
+  // Optional in case you later add:
+  full_name?: string       // not present now; kept for future
+  nickname?: string        // not present now; kept for future
 }
 
 type Game = {
@@ -84,50 +84,72 @@ type UserPick = {
   displayText: string
 }
 
-/* =========================
-   Utilities
-========================= */
+// ========= Utilities =========
+const applyNoTieLogic = (v: number) => (Math.floor(v) === v ? v + 0.5 : v)
 
-// No-tie logic: if value is an integer, add 0.5. Never subtract.
-const applyNoTieLogic = (value: number): number =>
-  Math.floor(value) === value ? value + 0.5 : value
-
-// Fallback city shortener (used only if team table data is missing)
 const getCityName = (teamName: string): string => {
   const suffixes = [
-    'Chiefs','Lions','Packers','Bears','Vikings','Buccaneers',
-    'Patriots','Bills','Jets','Dolphins','Ravens','Bengals',
-    'Browns','Steelers','Texans','Colts','Jaguars','Titans',
-    'Broncos','Raiders','Chargers','Cowboys','Eagles','Giants',
-    'Commanders','49ers','Seahawks','Rams','Saints','Falcons',
-    'Panthers','Rays','Orioles','Blue Jays','Yankees','Red Sox',
-    'Guardians','Tigers','Royals','Twins','White Sox','Astros',
-    'Athletics','Angels','Mariners','Rangers','Phillies','Mets',
-    'Nationals','Marlins','Braves','Brewers','Cubs','Reds',
-    'Pirates','Cardinals','Dodgers','Giants','Padres','Rockies',
-    'Diamondbacks'
+    'Chiefs','Lions','Packers','Bears','Vikings','Buccaneers','Patriots','Bills',
+    'Jets','Dolphins','Ravens','Bengals','Browns','Steelers','Texans','Colts',
+    'Jaguars','Titans','Broncos','Raiders','Chargers','Cowboys','Eagles','Giants',
+    'Commanders','49ers','Seahawks','Rams','Saints','Falcons','Panthers','Rays',
+    'Orioles','Blue Jays','Yankees','Red Sox','Guardians','Tigers','Royals','Twins',
+    'White Sox','Astros','Athletics','Angels','Mariners','Rangers','Phillies','Mets',
+    'Nationals','Marlins','Braves','Brewers','Cubs','Reds','Pirates','Cardinals',
+    'Dodgers','Giants','Padres','Rockies','Diamondbacks'
   ]
   let city = teamName
   suffixes.forEach(s => {
     if (city.endsWith(s)) city = city.replace(s, '').trim()
   })
-  const shortNames: Record<string, string> = {
-    'San Francisco': 'SF',
-    'Los Angeles': 'LA',
-    'New York': 'NY',
-    'Tampa Bay': 'Tampa',
-    'Green Bay': 'GB',
-    'New England': 'NE',
-    'Kansas City': 'KC',
-    'Las Vegas': 'LV',
-    'San Diego': 'SD'
+  const shortMap: Record<string,string> = {
+    'San Francisco':'SF','Los Angeles':'LA','New York':'NY','Tampa Bay':'Tampa',
+    'Green Bay':'GB','New England':'NE','Kansas City':'KC','Las Vegas':'LV','San Diego':'SD'
   }
-  return shortNames[city] || city
+  return shortMap[city] || city
 }
 
-/* =========================
-   Small UI bits
-========================= */
+const normalize = (s?: string) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim()
+
+// Build a robust index with multiple keys per team so odds strings match
+const buildTeamIndex = (teams: Team[]) => {
+  const idx = new Map<string, Team>()
+  for (const t of teams) {
+    const abbr = normalize(t.abbreviation)
+    const city = normalize(t.city)
+    const nick = normalize(t.team_name) // nickname in your table
+
+    // Primary keys
+    if (abbr) idx.set(abbr, t)                 // "sea"
+    if (city) idx.set(city, t)                 // "seattle"
+    if (nick) idx.set(nick, t)                 // "seahawks"
+
+    // Common composites from feeds
+    if (city && nick) {
+      idx.set(`${city} ${nick}`, t)            // "seattle seahawks"
+    }
+
+    // Known full names (defensive)
+    const full = normalize(`${t.city} ${t.team_name}`) // you don't store full_name, so synthesize
+    if (full) idx.set(full, t)
+
+    // NFC East oddballs
+    if (t.city === 'New England') idx.set(normalize('Patriots'), t)
+    if (t.city === 'Tampa Bay')   idx.set(normalize('Buccaneers'), t)
+    if (t.city === 'Green Bay')   idx.set(normalize('Packers'), t)
+    if (t.city === 'San Francisco') idx.set(normalize('49ers'), t)
+    if (t.city === 'Los Angeles' && t.team_name === 'Chargers') idx.set(normalize('LAC'), t)
+    if (t.city === 'Los Angeles' && t.team_name === 'Rams')     idx.set(normalize('LAR'), t)
+    if (t.city === 'New York' && t.team_name === 'Jets')  idx.set(normalize('NYJ'), t)
+    if (t.city === 'New York' && t.team_name === 'Giants')idx.set(normalize('NYG'), t)
+    if (t.city === 'Washington') idx.set(normalize('Commanders'), t)
+    if (t.city === 'Arizona')    idx.set(normalize('Cardinals'), t)
+    if (t.city === 'Charlotte')  idx.set(normalize('Panthers'), t) // your table uses "Charlotte"
+  }
+  return idx
+}
+
+// ========= Small UI bits =========
 const TokenIcon = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="currentColor">
     <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" />
@@ -135,7 +157,6 @@ const TokenIcon = ({ className }: { className?: string }) => (
   </svg>
 )
 
-// Pixelated cloud for the header
 const PixelatedCloud = ({ index }: { index: number }) => {
   const speeds = [25, 35, 45, 30, 40, 50, 28, 38]
   const dims = [
@@ -166,20 +187,17 @@ const PixelatedCloud = ({ index }: { index: number }) => {
   )
 }
 
-/* =========================
-   Page Component
-========================= */
+// ========= Page =========
 export default function PerfectSlateGame() {
   const router = useRouter()
 
-  // State
   const [selectedSport, setSelectedSport] = useState<Sport>('NFL')
   const [showSportDropdown, setShowSportDropdown] = useState(false)
   const [showMobileMenu, setShowMobileMenu] = useState(false)
 
   const [games, setGames] = useState<Game[]>([])
   const [picks, setPicks] = useState<Pick[]>([])
-  const [teamsMap, setTeamsMap] = useState<Record<string, Team>>({})
+  const [teams, setTeams] = useState<Team[]>([])
 
   const [currentContest, setCurrentContest] = useState<Contest | null>(null)
   const [selectedPicks, setSelectedPicks] = useState<UserPick[]>([])
@@ -191,15 +209,14 @@ export default function PerfectSlateGame() {
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [showPrizeHistory, setShowPrizeHistory] = useState(false)
   const [timeRemaining, setTimeRemaining] = useState('')
-  const [contestStatus, setContestStatus] = useState<'pre-contest' | 'active' | 'locked'>('active')
+  const [contestStatus, setContestStatus] = useState<'pre-contest'|'active'|'locked'>('active')
   const [user, setUser] = useState<any>(null)
   const [tokenBalance, setTokenBalance] = useState(0)
 
   const [showAuthModal, setShowAuthModal] = useState(false)
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signup')
+  const [authMode, setAuthMode] = useState<'signin'|'signup'>('signup')
   const [showVerificationSuccess, setShowVerificationSuccess] = useState(false)
 
-  // Responsive flag for abbreviation+logo on mobile
   const [isMobile, setIsMobile] = useState(false)
   useEffect(() => {
     const update = () => setIsMobile(window.innerWidth < 640)
@@ -208,7 +225,15 @@ export default function PerfectSlateGame() {
     return () => window.removeEventListener('resize', update)
   }, [])
 
-  /* -------- Auth & initial load -------- */
+  // Build the fast team index whenever teams change
+  const teamIndex = useMemo(() => buildTeamIndex(teams), [teams])
+
+  const resolveTeam = (nameOrAbbr?: string): Team | undefined => {
+    if (!nameOrAbbr) return undefined
+    return teamIndex.get(normalize(nameOrAbbr))
+  }
+
+  // ===== Auth + initial load =====
   useEffect(() => {
     const handleAuthFlow = async () => {
       const urlParams = new URLSearchParams(window.location.search)
@@ -244,7 +269,6 @@ export default function PerfectSlateGame() {
         setUser(session.user)
         await loadUserProfile(session.user.id)
       }
-
       await loadContestData()
     }
 
@@ -270,18 +294,14 @@ export default function PerfectSlateGame() {
     }
   }, [selectedSport])
 
-  // Clock UI
   useEffect(() => {
     const t = setInterval(() => updateTimeRemaining(), 1000)
     return () => clearInterval(t)
   }, [currentContest, games])
 
-  // Live refresh while games in progress
   useEffect(() => {
     const scoreInterval = setInterval(() => {
-      if (games.some(g => g.status === 'in_progress')) {
-        loadContestData()
-      }
+      if (games.some(g => g.status === 'in_progress')) loadContestData()
     }, 30000)
     return () => clearInterval(scoreInterval)
   }, [games])
@@ -289,19 +309,13 @@ export default function PerfectSlateGame() {
   const loadUserProfile = async (userId: string) => {
     try {
       const { data: userData, error } = await supabase
-        .from('user_profiles')
-        .select('token_balance')
-        .eq('id', userId)
-        .single()
+        .from('user_profiles').select('token_balance').eq('id', userId).single()
 
       if (error && (error as any).code === 'PGRST116') {
         const { error: createError } = await supabase.rpc('create_profile_for_user', { user_id: userId })
         if (!createError) {
           const { data: newUserData } = await supabase
-            .from('user_profiles')
-            .select('token_balance')
-            .eq('id', userId)
-            .single()
+            .from('user_profiles').select('token_balance').eq('id', userId).single()
           if (newUserData) setTokenBalance(newUserData.token_balance)
         }
       } else if (userData) {
@@ -327,7 +341,7 @@ export default function PerfectSlateGame() {
         .from('contests')
         .select('*')
         .eq('sport', selectedSport)
-        .in('status', ['open', 'locked', 'in_progress'])
+        .in('status', ['open','locked','in_progress'])
         .order('week_number', { ascending: false })
         .limit(1)
         .single()
@@ -353,18 +367,15 @@ export default function PerfectSlateGame() {
         }
       }
 
-      // Load teams for selected sport for logos/colors/abbr
-      const { data: teamsData } = await supabase
-        .from('teams')
-        .select('*')
-        .eq('sport', selectedSport)
-
-      if (teamsData) {
-        const map = teamsData.reduce((acc, t) => {
-          acc[t.full_name] = t
-          return acc
-        }, {} as Record<string, Team>)
-        setTeamsMap(map)
+      // Only fetch NFL teams for logos/colors
+      if (selectedSport === 'NFL') {
+        const { data: teamsData } = await supabase
+          .from('teams')
+          .select('id, sport, team_name, city, abbreviation, primary_color, secondary_color, logo_url, pixelated_logo_url')
+          .eq('sport', 'NFL')
+        setTeams(teamsData || [])
+      } else {
+        setTeams([]) // avoid mismatches on non-NFL
       }
     } finally {
       setIsLoading(false)
@@ -379,8 +390,8 @@ export default function PerfectSlateGame() {
     if (now < openTime) {
       setContestStatus('pre-contest')
       const diff = openTime.getTime() - now.getTime()
-      const h = Math.floor(diff / (1000 * 60 * 60))
-      const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+      const h = Math.floor(diff / (1000*60*60))
+      const m = Math.floor((diff % (1000*60*60)) / (1000*60))
       setTimeRemaining(`${h}h ${m}m`)
       return
     }
@@ -391,52 +402,64 @@ export default function PerfectSlateGame() {
       setTimeRemaining('LOCKED')
       return
     }
-    if (upcoming.length >= 5) {
-      setContestStatus('active')
-      const fifthToLast = upcoming[upcoming.length - 5]
-      const lockTime = new Date(fifthToLast.scheduled_time)
-      const diff = lockTime.getTime() - now.getTime()
-      if (diff <= 0) {
-        setContestStatus('locked')
-        setTimeRemaining('LOCKED')
-      } else {
-        const h = Math.floor(diff / (1000 * 60 * 60))
-        const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-        setTimeRemaining(`${h}h ${m}m`)
-      }
+    setContestStatus('active')
+    const fifthToLast = upcoming[upcoming.length - 5]
+    const lockTime = new Date(fifthToLast.scheduled_time)
+    const diff = lockTime.getTime() - now.getTime()
+    if (diff <= 0) {
+      setContestStatus('locked')
+      setTimeRemaining('LOCKED')
+    } else {
+      const h = Math.floor(diff / (1000*60*60))
+      const m = Math.floor((diff % (1000*60*60)) / (1000*60))
+      setTimeRemaining(`${h}h ${m}m`)
     }
   }
 
-  const isGameAvailable = (game: Game) => {
+  const isGameAvailable = (g: Game) => {
     const now = new Date()
-    const gameTime = new Date(game.scheduled_time)
-    return game.status === 'scheduled' && gameTime > now
+    return g.status === 'scheduled' && new Date(g.scheduled_time) > now
   }
 
+  // === Toggle behavior: tap the same pick again => remove. Tap other side => replace. ===
   const handlePickSelect = (
     gameId: number,
     pickType: 'spread' | 'total',
-    selection: string,
+    selection: 'home' | 'away' | 'over' | 'under',
     displayText: string,
     pickId: number
   ) => {
-    if (!user) {
-      setShowAuthModal(true)
-      return
-    }
+    if (!user) { setShowAuthModal(true); return }
     if (isSubmitted || gamesWithTokens.has(gameId) || contestStatus !== 'active') return
 
-    const idxSameType = selectedPicks.findIndex(p => p.gameId === gameId && p.pickType === pickType)
+    const idxExact = selectedPicks.findIndex(p =>
+      p.gameId === gameId && p.pickType === pickType && p.pickId === pickId
+    )
+    if (idxExact !== -1) {
+      // tap same -> unselect
+      const cp = [...selectedPicks]
+      cp.splice(idxExact, 1)
+      setSelectedPicks(cp)
+      return
+    }
+
+    const idxSameType = selectedPicks.findIndex(p =>
+      p.gameId === gameId && p.pickType === pickType
+    )
+
     if (idxSameType !== -1) {
+      // replace the other side for same type
       const cp = [...selectedPicks]
       cp[idxSameType] = { gameId, pickId, pickType, selection, displayText }
       setSelectedPicks(cp)
-    } else {
-      const picksForGame = selectedPicks.filter(p => p.gameId === gameId)
-      if (selectedPicks.length + gamesWithTokens.size >= 10) return
-      if (picksForGame.length >= 2) return
-      setSelectedPicks([...selectedPicks, { gameId, pickId, pickType, selection, displayText }])
+      return
     }
+
+    // brand-new pick for this game
+    const picksForGame = selectedPicks.filter(p => p.gameId === gameId)
+    if (selectedPicks.length + gamesWithTokens.size >= 10) return
+    if (picksForGame.length >= 2) return
+    setSelectedPicks([...selectedPicks, { gameId, pickId, pickType, selection, displayText }])
   }
 
   const handleTokenToggle = (gameId: number) => {
@@ -454,27 +477,23 @@ export default function PerfectSlateGame() {
     }
   }
 
-  const removePick = (index: number) => {
+  const removePick = (index: number) =>
     setSelectedPicks(selectedPicks.filter((_, i) => i !== index))
-  }
 
   const submitSlate = async () => {
     if (!user || !currentContest) return
     try {
       const token = (await supabase.auth.getSession()).data.session?.access_token
-      const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/submit-picks`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/submit-picks`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token ?? ''}`
-        },
+        headers: { 'Content-Type':'application/json', 'Authorization': `Bearer ${token ?? ''}` },
         body: JSON.stringify({
           contestId: currentContest.id,
           picks: selectedPicks.map(p => p.pickId),
           tokensUsed: gamesWithTokens.size
         })
       })
-      const result = await response.json()
+      const result = await res.json()
       if (result.success) {
         setIsSubmitted(true)
         setShowConfirmModal(false)
@@ -485,12 +504,12 @@ export default function PerfectSlateGame() {
         alert(result.error || 'Submission failed')
       }
     } catch (e) {
-      console.error('Error submitting picks:', e)
+      console.error(e)
       alert('Failed to submit picks. Please try again.')
     }
   }
 
-  /* -------- Game Card -------- */
+  // ========= Game Card =========
   const GameCard = ({ game }: { game: Game }) => {
     const gamePicks = picks.filter(p => p.game_id === game.id)
     const spreads = gamePicks.filter(p => p.pick_type === 'spread')
@@ -506,74 +525,77 @@ export default function PerfectSlateGame() {
     const disabled  = hasToken || isSubmitted || !available || contestStatus !== 'active'
     const started   = game.status === 'in_progress' || game.status === 'final'
 
-    // Teams (from table) for colors, logos, abbreviations
-    const homeTeam: Team | undefined = teamsMap[game.home_team]
-    const awayTeam: Team | undefined = teamsMap[game.away_team]
+    // Resolve teams via index
+    const homeTeam =
+      resolveTeam(game.home_team) ||
+      resolveTeam(game.home_team_short) ||
+      resolveTeam(`${game.home_team}`)
 
-    // Percentages
+    const awayTeam =
+      resolveTeam(game.away_team) ||
+      resolveTeam(game.away_team_short) ||
+      resolveTeam(`${game.away_team}`)
+
+    // percents
     const totalSpread = (homeSpread?.times_selected || 0) + (awaySpread?.times_selected || 0)
-    const totalTotal  = (overTotal?.times_selected  || 0) + (underTotal?.times_selected  || 0)
-    const homeSpreadPct = totalSpread > 0 ? Math.round(((homeSpread?.times_selected || 0) / totalSpread) * 100) : 50
-    const awaySpreadPct = totalSpread > 0 ? Math.round(((awaySpread?.times_selected || 0) / totalSpread) * 100) : 50
-    const overPct       = totalTotal  > 0 ? Math.round(((overTotal?.times_selected  || 0) / totalTotal ) * 100) : 50
-    const underPct      = totalTotal  > 0 ? Math.round(((underTotal?.times_selected || 0) / totalTotal ) * 100) : 50
+    const totalTotal  = (overTotal?.times_selected || 0)  + (underTotal?.times_selected || 0)
+    const homeSpreadPct = totalSpread > 0 ? Math.round(((homeSpread?.times_selected || 0)/totalSpread)*100) : 50
+    const awaySpreadPct = totalSpread > 0 ? Math.round(((awaySpread?.times_selected || 0)/totalSpread)*100) : 50
+    const overPct       = totalTotal  > 0 ? Math.round(((overTotal?.times_selected  || 0)/totalTotal )*100) : 50
+    const underPct      = totalTotal  > 0 ? Math.round(((underTotal?.times_selected || 0)/totalTotal )*100) : 50
 
-    // Displays with no-tie
     const homeSpreadDisplay = applyNoTieLogic(game.home_spread)
     const awaySpreadDisplay = applyNoTieLogic(game.away_spread)
     const totalDisplay      = applyNoTieLogic(game.total_points)
 
-    // Populars for closed
     const mostPopularSpread = homeSpreadPct >= awaySpreadPct
-      ? { text: `${(homeTeam?.short_name || game.home_team_short || getCityName(game.home_team))} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`, pct: homeSpreadPct }
-      : { text: `${(awayTeam?.short_name || game.away_team_short || getCityName(game.away_team))} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`, pct: awaySpreadPct }
+      ? { text: `${(homeTeam?.abbreviation || game.home_team_short || getCityName(game.home_team))} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`, pct: homeSpreadPct }
+      : { text: `${(awayTeam?.abbreviation || game.away_team_short || getCityName(game.away_team))} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`, pct: awaySpreadPct }
 
     const mostPopularTotal = overPct >= underPct
       ? { text: `Over ${totalDisplay}`, pct: overPct }
       : { text: `Under ${totalDisplay}`, pct: underPct }
 
-    // Mobile label: abbreviation else city fallback
     const awayLabel = isMobile
       ? (awayTeam?.abbreviation || game.away_team_short || getCityName(game.away_team))
       : (awayTeam?.city || getCityName(game.away_team))
-
     const homeLabel = isMobile
       ? (homeTeam?.abbreviation || game.home_team_short || getCityName(game.home_team))
       : (homeTeam?.city || getCityName(game.home_team))
 
-    // Team colors for gradient background
     const leftColor  = awayTeam?.primary_color || '#666'
     const rightColor = homeTeam?.primary_color || '#999'
 
+    const awayLogo = awayTeam?.pixelated_logo_url || awayTeam?.logo_url
+    const homeLogo = homeTeam?.pixelated_logo_url || homeTeam?.logo_url
+
     return (
-      <div 
+      <div
         className={`relative rounded-2xl overflow-hidden shadow-lg border-4 ${
           hasToken ? 'border-yellow-400 bg-yellow-50' :
           !available ? 'border-gray-400 bg-gray-50' : 'border-gray-200'
         } hover:shadow-xl transition-all duration-300`}
       >
-        {/* Subtle team-color gradient behind content */}
-        <div 
+        <div
           className="absolute inset-0"
           style={{
             background: `linear-gradient(135deg, ${leftColor} 0%, ${leftColor} 45%, ${rightColor} 55%, ${rightColor} 100%)`,
             opacity: 0.08
           }}
         />
-
         <div className="relative bg-white/95 backdrop-blur p-4">
-          {/* Top row: time + open/closed + token */}
+          {/* header */}
           <div className="flex justify-between items-start mb-3">
             <div className="flex flex-col">
-              <div className="flex items-center space-x-2 text-gray-700">
+              <div className="flex items-center gap-2 text-gray-700">
                 <Clock className="w-4 h-4" />
                 <span className="text-xs pixel-font font-bold">
-                  {new Date(game.scheduled_time).toLocaleTimeString('en-US', { 
+                  {new Date(game.scheduled_time).toLocaleTimeString('en-US', {
                     hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York'
                   })} ET
                 </span>
               </div>
-              <div className="flex items-center space-x-2 mt-1">
+              <div className="flex items-center gap-2 mt-1">
                 {available && contestStatus === 'active' ? (
                   <>
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
@@ -591,7 +613,7 @@ export default function PerfectSlateGame() {
             {available && contestStatus === 'active' && (
               <button
                 onClick={() => handleTokenToggle(game.id)}
-                className={`flex items-center space-x-2 px-3 py-1 rounded-full text-xs pixel-font transition-all ${
+                className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs pixel-font transition-all ${
                   hasToken ? 'bg-yellow-400 text-yellow-900 shadow-md' : 'bg-gray-100 hover:bg-yellow-100 text-gray-700'
                 }`}
               >
@@ -601,13 +623,13 @@ export default function PerfectSlateGame() {
             )}
           </div>
 
-          {/* Teams row with pixel logos + abbrev/city */}
+          {/* teams row */}
           <div className="flex items-center justify-center mb-3">
             <div className="flex items-center gap-2 flex-1 justify-end">
-              {awayTeam?.logo_url && (
+              {awayLogo && (
                 <img
-                  src={awayTeam.logo_url}
-                  alt={awayTeam.short_name}
+                  src={awayLogo}
+                  alt={awayTeam?.team_name || 'Away'}
                   className="w-8 h-8"
                   style={{ imageRendering: 'pixelated' }}
                 />
@@ -616,17 +638,15 @@ export default function PerfectSlateGame() {
                 {awayLabel}
               </span>
             </div>
-
             <span className="mx-3 text-gray-500 text-sm pixel-font">@</span>
-
             <div className="flex items-center gap-2 flex-1">
               <span className="text-sm font-bold pixel-font" style={{ color: rightColor }}>
                 {homeLabel}
               </span>
-              {homeTeam?.logo_url && (
+              {homeLogo && (
                 <img
-                  src={homeTeam.logo_url}
-                  alt={homeTeam.short_name}
+                  src={homeLogo}
+                  alt={homeTeam?.team_name || 'Home'}
                   className="w-8 h-8"
                   style={{ imageRendering: 'pixelated' }}
                 />
@@ -634,8 +654,8 @@ export default function PerfectSlateGame() {
             </div>
           </div>
 
-          {/* Scores */}
-          {started && (
+          {/* score */}
+          {(game.status === 'in_progress' || game.status === 'final') && (
             <div className="text-center mb-3">
               <div className="text-xl font-bold pixel-font">
                 <span className={(game.away_score || 0) > (game.home_score || 0) ? 'text-green-600' : 'text-gray-700'}>
@@ -655,16 +675,16 @@ export default function PerfectSlateGame() {
             </div>
           )}
 
-          {/* Picks */}
-          {!started && available ? (
+          {/* picks */}
+          {isGameAvailable(game) ? (
             <div className="space-y-3">
-              {/* Spread */}
+              {/* spread */}
               <div>
                 <div className="text-center text-[11px] font-bold text-gray-500 mb-1 pixel-font">SPREAD</div>
                 <div className="grid grid-cols-2 gap-2">
                   <PickButton
                     text={`${awayTeam?.abbreviation || game.away_team_short || getCityName(game.away_team)} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`}
-                    isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.selection === 'away')}
+                    isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.pickId === (awaySpread?.id ?? -1))}
                     onClick={() => awaySpread && handlePickSelect(
                       game.id, 'spread', 'away',
                       `${awayTeam?.abbreviation || game.away_team_short || getCityName(game.away_team)} ${awaySpreadDisplay > 0 ? '+' : ''}${awaySpreadDisplay}`,
@@ -675,7 +695,7 @@ export default function PerfectSlateGame() {
                   />
                   <PickButton
                     text={`${homeTeam?.abbreviation || game.home_team_short || getCityName(game.home_team)} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`}
-                    isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.selection === 'home')}
+                    isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'spread' && p.pickId === (homeSpread?.id ?? -1))}
                     onClick={() => homeSpread && handlePickSelect(
                       game.id, 'spread', 'home',
                       `${homeTeam?.abbreviation || game.home_team_short || getCityName(game.home_team)} ${homeSpreadDisplay > 0 ? '+' : ''}${homeSpreadDisplay}`,
@@ -687,7 +707,7 @@ export default function PerfectSlateGame() {
                 </div>
               </div>
 
-              {/* Total */}
+              {/* total */}
               <div>
                 <div className="text-center text-[11px] font-bold text-gray-500 mb-1 pixel-font">
                   {game.sport === 'MLB' ? 'TOTAL RUNS' : 'TOTAL POINTS'}
@@ -695,7 +715,7 @@ export default function PerfectSlateGame() {
                 <div className="grid grid-cols-2 gap-2">
                   <PickButton
                     text={`Over ${totalDisplay}`}
-                    isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'total' && p.selection === 'over')}
+                    isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'total' && p.pickId === (overTotal?.id ?? -1))}
                     onClick={() => overTotal && handlePickSelect(
                       game.id, 'total', 'over',
                       `Over ${totalDisplay}`,
@@ -706,7 +726,7 @@ export default function PerfectSlateGame() {
                   />
                   <PickButton
                     text={`Under ${totalDisplay}`}
-                    isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'total' && p.selection === 'under')}
+                    isSelected={selectedPicks.some(p => p.gameId === game.id && p.pickType === 'total' && p.pickId === (underTotal?.id ?? -1))}
                     onClick={() => underTotal && handlePickSelect(
                       game.id, 'total', 'under',
                       `Under ${totalDisplay}`,
@@ -719,7 +739,6 @@ export default function PerfectSlateGame() {
               </div>
             </div>
           ) : (
-            // Populars if closed
             <div className="space-y-3">
               <div className="text-center">
                 <div className="text-xs font-bold pixel-font text-gray-700 mb-2">MOST POPULAR</div>
@@ -741,7 +760,6 @@ export default function PerfectSlateGame() {
             </div>
           )}
 
-          {/* Token note */}
           {hasToken && (
             <div className="mt-3 text-center">
               <span className="text-[11px] text-yellow-700 pixel-font animate-pulse">
@@ -754,7 +772,9 @@ export default function PerfectSlateGame() {
     )
   }
 
-  const PickButton = ({ text, isSelected, onClick, disabled, percentage }:{
+  const PickButton = ({
+    text, isSelected, onClick, disabled, percentage
+  }: {
     text: string
     isSelected: boolean
     onClick: () => void
@@ -775,10 +795,7 @@ export default function PerfectSlateGame() {
       `}
     >
       {typeof percentage === 'number' && (
-        <div 
-          className="absolute left-0 top-0 bottom-0 bg-black opacity-10"
-          style={{ width: `${percentage}%` }}
-        />
+        <div className="absolute left-0 top-0 bottom-0 bg-black opacity-10" style={{ width: `${percentage}%` }} />
       )}
       <span className="relative z-10 flex items-center justify-center gap-1">
         {isSelected && <Zap className="w-3 h-3" />}
@@ -790,7 +807,7 @@ export default function PerfectSlateGame() {
     </button>
   )
 
-  /* -------- Loading -------- */
+  // ====== Loading screen ======
   if (isLoading) {
     return (
       <div className="min-h-screen bg-sky-400 flex items-center justify-center">
@@ -805,8 +822,8 @@ export default function PerfectSlateGame() {
   }
 
   const totalPicks = selectedPicks.length + gamesWithTokens.size
-  const today = new Date().toLocaleDateString('en-US', { 
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+  const today = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
   })
 
   return (
@@ -818,22 +835,19 @@ export default function PerfectSlateGame() {
         }
       `}</style>
 
-      {/* Top sky */}
+      {/* Sky */}
       <div className="bg-sky-400 absolute top-0 left-0 right-0 h-[450px]" />
-
-      {/* Pixel clouds */}
+      {/* Clouds */}
       <div className="absolute top-0 left-0 right-0 h-[450px] overflow-hidden pointer-events-none">
         {Array.from({ length: 8 }).map((_, i) => <PixelatedCloud key={i} index={i} />)}
       </div>
-
-      {/* Bottom field */}
+      {/* Field */}
       <div className="bg-green-500 absolute top-[450px] left-0 right-0 bottom-0" />
 
       {/* Nav */}
       <nav className="relative z-20">
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex justify-between items-center">
-            {/* Sport dropdown */}
             <div className="relative">
               <button
                 onClick={() => setShowSportDropdown(s => !s)}
@@ -844,87 +858,62 @@ export default function PerfectSlateGame() {
               </button>
               {showSportDropdown && (
                 <div className="absolute top-full left-0 mt-2 bg-white rounded-xl shadow-xl overflow-hidden z-50">
-                  {(['NFL','NCAAF','MLB'] as Sport[]).map(sport => (
+                  {(['NFL','NCAAF','MLB'] as Sport[]).map(s => (
                     <button
-                      key={sport}
-                      onClick={() => { setSelectedSport(sport); setShowSportDropdown(false) }}
+                      key={s}
+                      onClick={() => { setSelectedSport(s); setShowSportDropdown(false) }}
                       className="block w-full text-left px-5 py-3 pixel-font text-xs md:text-sm hover:bg-blue-50 transition-colors"
                     >
-                      {sport}
+                      {s}
                     </button>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Desktop links */}
             <div className="hidden md:flex items-center gap-5">
               <button className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center gap-2">
-                <FileText className="w-4 h-4" />
-                <span>RULES</span>
+                <FileText className="w-4 h-4" /><span>RULES</span>
               </button>
               <button className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center gap-2">
-                <BarChart3 className="w-4 h-4" />
-                <span>LEADERBOARDS</span>
+                <BarChart3 className="w-4 h-4" /><span>LEADERBOARDS</span>
               </button>
               {user ? (
-                <button 
-                  onClick={() => router.push('/profile')}
-                  className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center gap-2"
-                >
-                  <User className="w-4 h-4" />
-                  <span>PROFILE</span>
+                <button onClick={() => router.push('/profile')} className="text-white pixel-font text-sm hover:text-yellow-300 transition-colors flex items-center gap-2">
+                  <User className="w-4 h-4" /><span>PROFILE</span>
                 </button>
               ) : (
-                <button 
+                <button
                   onClick={() => { setAuthMode('signup'); setShowAuthModal(true) }}
                   className="bg-yellow-400 text-yellow-900 pixel-font text-sm hover:bg-yellow-300 transition-colors flex items-center gap-2 px-4 py-2 rounded-lg font-bold"
                 >
-                  <Zap className="w-4 h-4" />
-                  <span>SIGN UP</span>
+                  <Zap className="w-4 h-4" /><span>SIGN UP</span>
                 </button>
               )}
             </div>
 
-            {/* Mobile menu button */}
             <button onClick={() => setShowMobileMenu(m => !m)} className="md:hidden text-white">
               <Menu className="w-6 h-6" />
             </button>
           </div>
 
-          {/* Mobile menu */}
           {showMobileMenu && (
             <div className="md:hidden mt-3 pb-3 border-t border-blue-300 pt-3">
-              <button className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">
-                RULES
-              </button>
-              <button className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">
-                LEADERBOARDS
-              </button>
+              <button className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">RULES</button>
+              <button className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">LEADERBOARDS</button>
               {user ? (
-                <button 
-                  onClick={() => { router.push('/profile'); setShowMobileMenu(false) }}
-                  className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors"
-                >
-                  PROFILE
-                </button>
+                <button onClick={() => { router.push('/profile'); setShowMobileMenu(false) }} className="block w-full text-left text-white pixel-font text-sm py-2 hover:text-yellow-300 transition-colors">PROFILE</button>
               ) : (
-                <button 
-                  onClick={() => { setAuthMode('signup'); setShowAuthModal(true); setShowMobileMenu(false) }}
-                  className="block w-full text-left text-yellow-300 pixel-font text-sm py-2 hover:text-yellow-400 transition-colors font-bold"
-                >
-                  SIGN UP TO PLAY
-                </button>
+                <button onClick={() => { setAuthMode('signup'); setShowAuthModal(true); setShowMobileMenu(false) }} className="block w-full text-left text-yellow-300 pixel-font text-sm py-2 hover:text-yellow-400 transition-colors font-bold">SIGN UP TO PLAY</button>
               )}
             </div>
           )}
         </div>
       </nav>
 
-      {/* Header content */}
+      {/* Header */}
       <div className="relative z-10 pb-12">
         <div className="text-center pt-6">
-          {/* Prize Pool */}
           <button onClick={() => setShowPrizeHistory(true)} className="inline-block mb-4 group">
             <div className="bg-yellow-400 rounded-xl px-5 md:px-6 py-3 md:py-3.5 shadow-xl transform group-hover:scale-105 transition-all duration-300">
               <div className="flex items-center gap-2">
@@ -937,23 +926,18 @@ export default function PerfectSlateGame() {
             </div>
           </button>
 
-          {/* Stats */}
           <div className="flex justify-center items-center gap-6 md:gap-8 text-white mb-6">
             <div>
               <div className="flex items-center justify-center gap-2 mb-1">
                 <Users className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="text-lg md:text-xl font-bold pixel-font">
-                  {currentContest?.total_entries || 0}
-                </span>
+                <span className="text-lg md:text-xl font-bold pixel-font">{currentContest?.total_entries || 0}</span>
               </div>
               <div className="text-[11px] pixel-font opacity-90">ENTRIES</div>
             </div>
             <div>
               <div className="flex items-center justify-center gap-2 mb-1">
                 <Clock className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="text-lg md:text-xl font-bold pixel-font">
-                  {timeRemaining}
-                </span>
+                <span className="text-lg md:text-xl font-bold pixel-font">{timeRemaining}</span>
               </div>
               <div className="text-[11px] pixel-font opacity-90">
                 {contestStatus === 'pre-contest' ? 'OPENS IN' : contestStatus === 'active' ? 'CLOSES IN' : 'CONTEST LOCKED'}
@@ -961,12 +945,9 @@ export default function PerfectSlateGame() {
             </div>
           </div>
 
-          {/* Today box */}
           <div className="max-w-4xl mx-auto px-4">
             <div className="bg-white/90 backdrop-blur rounded-xl p-3 md:p-4 shadow-xl border-4 border-yellow-400">
-              <h2 className="text-base md:text-lg font-bold pixel-font text-gray-800 mb-1">
-                SELECT YOUR PERFECT 10
-              </h2>
+              <h2 className="text-base md:text-lg font-bold pixel-font text-gray-800 mb-1">SELECT YOUR PERFECT 10</h2>
               <div className="flex items-center justify-center gap-2 text-gray-600">
                 <Calendar className="w-4 h-4 md:w-5 md:h-5" />
                 <span className="text-sm md:text-base pixel-font">{today}</span>
@@ -982,14 +963,14 @@ export default function PerfectSlateGame() {
         </div>
       </div>
 
-      {/* Games list */}
+      {/* Games */}
       <div className="relative z-10 max-w-5xl mx-auto px-4 pb-24 -mt-8">
         <div className="space-y-3">
-          {games.map(game => <GameCard key={game.id} game={game} />)}
+          {games.map(g => <GameCard key={g.id} game={g} />)}
         </div>
       </div>
 
-      {/* Floating pick counter */}
+      {/* Floating counter */}
       {totalPicks > 0 && !isSubmitted && (
         <div className="fixed bottom-4 right-4 z-50">
           <button
@@ -1002,13 +983,10 @@ export default function PerfectSlateGame() {
             </div>
             {totalPicks === 10 && (
               <div className="absolute -top-2 -right-2 animate-bounce">
-                <div className="bg-green-400 rounded-full p-2">
-                  <Trophy className="w-4 h-4 text-white" />
-                </div>
+                <div className="bg-green-400 rounded-full p-2"><Trophy className="w-4 h-4 text-white" /></div>
               </div>
             )}
           </button>
-
           {totalPicks === 10 && (
             <div className="absolute -top-14 right-0 bg-green-500 rounded-lg px-3 py-1 shadow-lg animate-pulse">
               <span className="text-[11px] pixel-font text-white font-bold">READY!</span>
@@ -1038,32 +1016,28 @@ export default function PerfectSlateGame() {
               </div>
             )}
 
-            {/* Picks chosen */}
             <div className="space-y-2 mb-4">
-              {selectedPicks.map((pick, idx) => (
-                <div key={idx} className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
+              {selectedPicks.map((pick, index) => (
+                <div key={index} className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
                   <span className="text-xs font-bold pixel-font">{pick.displayText}</span>
-                  <button onClick={() => removePick(idx)}>
+                  <button onClick={() => removePick(index)}>
                     <Trash2 className="w-4 h-4 text-red-500 hover:text-red-700" />
                   </button>
                 </div>
               ))}
 
-              {/* Token games */}
               {Array.from(gamesWithTokens).map(gameId => {
                 const g = games.find(x => x.id === gameId)
                 if (!g) return null
-                const ht = teamsMap[g.home_team]
-                const at = teamsMap[g.away_team]
+                const ht = resolveTeam(g.home_team) || resolveTeam(g.home_team_short)
+                const at = resolveTeam(g.away_team) || resolveTeam(g.away_team_short)
                 const left = at?.abbreviation || g.away_team_short || getCityName(g.away_team)
                 const right = ht?.abbreviation || g.home_team_short || getCityName(g.home_team)
                 return (
                   <div key={`token-${gameId}`} className="bg-yellow-50 rounded-lg p-3 flex justify-between items-center">
                     <div className="flex items-center gap-2">
                       <TokenIcon className="w-4 h-4 text-yellow-600" />
-                      <span className="text-xs font-bold pixel-font">
-                        TOKEN: {left} @ {right}
-                      </span>
+                      <span className="text-xs font-bold pixel-font">TOKEN: {left} @ {right}</span>
                     </div>
                     <button onClick={() => handleTokenToggle(gameId)}>
                       <Trash2 className="w-4 h-4 text-red-500 hover:text-red-700" />
@@ -1145,17 +1119,12 @@ export default function PerfectSlateGame() {
       {showAuthModal && (
         <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-sm w-full shadow-2xl border-4 border-gray-800 relative overflow-hidden max-h-[90vh] overflow-y-auto">
-            <button
-              onClick={() => setShowAuthModal(false)}
-              className="absolute top-3 right-3 text-gray-500 hover:text-gray-700 z-10"
-            >
+            <button onClick={() => setShowAuthModal(false)} className="absolute top-3 right-3 text-gray-500 hover:text-gray-700 z-10">
               <X className="w-5 h-5" />
             </button>
 
             <div className="relative bg-gradient-to-b from-green-500 to-green-600 p-6 text-center">
-              <div className="flex justify-center mb-3">
-                <Zap className="w-10 h-10 text-yellow-300" />
-              </div>
+              <div className="flex justify-center mb-3"><Zap className="w-10 h-10 text-yellow-300" /></div>
               <h2 className="text-xl font-bold text-white pixel-font mb-2">SIGN UP TO PLAY</h2>
               <p className="text-yellow-300 text-xs pixel-font mb-1">Win real cash prizes daily</p>
               <p className="text-white text-xs pixel-font opacity-90">100% FREE to play</p>
@@ -1165,18 +1134,14 @@ export default function PerfectSlateGame() {
               <AuthForm
                 mode={authMode}
                 onModeChange={setAuthMode}
-                onSuccess={() => {
-                  setShowAuthModal(false)
-                  checkUser()
-                  loadContestData()
-                }}
+                onSuccess={() => { setShowAuthModal(false); checkUser(); loadContestData() }}
               />
             </div>
           </div>
         </div>
       )}
 
-      {/* Verification success */}
+      {/* Verification */}
       {showVerificationSuccess && (
         <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full shadow-2xl border-4 border-green-500 relative overflow-hidden">
@@ -1188,39 +1153,28 @@ export default function PerfectSlateGame() {
               </div>
               <h2 className="text-2xl font-bold text-white pixel-font mb-3">EMAIL VERIFIED!</h2>
               <p className="text-white text-sm pixel-font mb-2">Your email has been confirmed!</p>
-              <p className="text-yellow-300 text-sm pixel-font">
-                {user ? 'You can now play Perfect Slate' : 'Please sign in to start playing'}
-              </p>
+              <p className="text-yellow-300 text-sm pixel-font">{user ? 'You can now play Perfect Slate' : 'Please sign in to start playing'}</p>
             </div>
 
             <div className="p-6 text-center">
-              <p className="text-gray-600 text-sm pixel-font mb-6 italic">
-                "Good luck out there, champ! 🏆"
-              </p>
-
+              <p className="text-gray-600 text-sm pixel-font mb-6 italic">"Good luck out there, champ! 🏆"</p>
               {user ? (
                 <button
                   onClick={() => setShowVerificationSuccess(false)}
                   className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-6 rounded-lg pixel-font text-lg transition-all transform hover:scale-105 shadow-lg flex items-center justify-center gap-3"
                 >
-                  <Trophy className="w-6 h-6" />
-                  <span>PLAY NOW!</span>
-                  <ArrowRight className="w-6 h-6" />
+                  <Trophy className="w-6 h-6" /><span>PLAY NOW!</span><ArrowRight className="w-6 h-6" />
                 </button>
               ) : (
                 <button
                   onClick={() => { setShowVerificationSuccess(false); setShowAuthModal(true); setAuthMode('signin') }}
                   className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-4 px-6 rounded-lg pixel-font text-lg transition-all transform hover:scale-105 shadow-lg flex items-center justify-center gap-3"
                 >
-                  <LogOut className="w-6 h-6" />
-                  <span>SIGN IN TO PLAY</span>
-                  <ArrowRight className="w-6 h-6" />
+                  <LogOut className="w-6 h-6" /><span>SIGN IN TO PLAY</span><ArrowRight className="w-6 h-6" />
                 </button>
               )}
-
               <div className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-500 pixel-font">
-                <Zap className="w-4 h-4 text-yellow-500" />
-                <span>You've earned your first free token!</span>
+                <Zap className="w-4 h-4 text-yellow-500" /><span>You've earned your first free token!</span>
               </div>
             </div>
           </div>
