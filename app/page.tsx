@@ -11,22 +11,49 @@ import {
 import { supabase } from '@/lib/supabase'
 import AuthForm from '@/components/AuthForm'
 
+/* ------------------------------------------
+   Cloud assets (Supabase Storage)
+   ------------------------------------------ */
+// TODO: put your real project ref below
+const CLOUD_BASE =
+  'https://<your-project-ref>.supabase.co/storage/v1/object/public/Clouds'
+const CLOUD_COUNT = 16 // cloud-01.svg ... cloud-16.svg
+const cloudUrl = (i: number) =>
+  `${CLOUD_BASE}/cloud-${String(i + 1).padStart(2, '0')}.svg`
+
+function mulberry32(seed: number) {
+  return () => {
+    let t = (seed += 0x6D2B79F5)
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+function pickCloudIndices(seed: number, howMany: number) {
+  const r = mulberry32(seed)
+  const idxs = Array.from({ length: CLOUD_COUNT }, (_, i) => i)
+  for (let i = idxs.length - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1))
+    ;[idxs[i], idxs[j]] = [idxs[j], idxs[i]]
+  }
+  return idxs.slice(0, howMany)
+}
+
+/* ------------------------------------------
+   Types
+   ------------------------------------------ */
 type Sport = 'NFL' | 'NCAAF' | 'MLB'
 
 type Team = {
   id: number
   sport: Sport
-  // Your table fields:
-  team_name: string        // e.g., "Seahawks"
-  city: string             // e.g., "Seattle"
-  abbreviation: string     // e.g., "SEA"
+  team_name: string
+  city: string
+  abbreviation: string
   primary_color: string
   secondary_color: string
   logo_url: string
   pixelated_logo_url?: string
-  // Optional in case you later add:
-  full_name?: string       // not present now; kept for future
-  nickname?: string        // not present now; kept for future
 }
 
 type Game = {
@@ -84,7 +111,9 @@ type UserPick = {
   displayText: string
 }
 
-// ========= Utilities =========
+/* ------------------------------------------
+   Utilities
+   ------------------------------------------ */
 const applyNoTieLogic = (v: number) => (Math.floor(v) === v ? v + 0.5 : v)
 
 const getCityName = (teamName: string): string => {
@@ -111,45 +140,39 @@ const getCityName = (teamName: string): string => {
 
 const normalize = (s?: string) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim()
 
-// Build a robust index with multiple keys per team so odds strings match
 const buildTeamIndex = (teams: Team[]) => {
   const idx = new Map<string, Team>()
   for (const t of teams) {
     const abbr = normalize(t.abbreviation)
     const city = normalize(t.city)
-    const nick = normalize(t.team_name) // nickname in your table
+    const nick = normalize(t.team_name)
 
-    // Primary keys
-    if (abbr) idx.set(abbr, t)                 // "sea"
-    if (city) idx.set(city, t)                 // "seattle"
-    if (nick) idx.set(nick, t)                 // "seahawks"
+    if (abbr) idx.set(abbr, t)
+    if (city) idx.set(city, t)
+    if (nick) idx.set(nick, t)
+    if (city && nick) idx.set(`${city} ${nick}`, t)
+    const synth = normalize(`${t.city} ${t.team_name}`)
+    if (synth) idx.set(synth, t)
 
-    // Common composites from feeds
-    if (city && nick) {
-      idx.set(`${city} ${nick}`, t)            // "seattle seahawks"
-    }
-
-    // Known full names (defensive)
-    const full = normalize(`${t.city} ${t.team_name}`) // you don't store full_name, so synthesize
-    if (full) idx.set(full, t)
-
-    // NFC East oddballs
-    if (t.city === 'New England') idx.set(normalize('Patriots'), t)
-    if (t.city === 'Tampa Bay')   idx.set(normalize('Buccaneers'), t)
-    if (t.city === 'Green Bay')   idx.set(normalize('Packers'), t)
-    if (t.city === 'San Francisco') idx.set(normalize('49ers'), t)
-    if (t.city === 'Los Angeles' && t.team_name === 'Chargers') idx.set(normalize('LAC'), t)
-    if (t.city === 'Los Angeles' && t.team_name === 'Rams')     idx.set(normalize('LAR'), t)
-    if (t.city === 'New York' && t.team_name === 'Jets')  idx.set(normalize('NYJ'), t)
-    if (t.city === 'New York' && t.team_name === 'Giants')idx.set(normalize('NYG'), t)
-    if (t.city === 'Washington') idx.set(normalize('Commanders'), t)
-    if (t.city === 'Arizona')    idx.set(normalize('Cardinals'), t)
-    if (t.city === 'Charlotte')  idx.set(normalize('Panthers'), t) // your table uses "Charlotte"
+    // helpful aliases
+    if (t.city === 'New England') idx.set('patriots', t)
+    if (t.city === 'Tampa Bay')   idx.set('buccaneers', t)
+    if (t.city === 'Green Bay')   idx.set('packers', t)
+    if (t.city === 'San Francisco') idx.set('49ers', t)
+    if (t.city === 'Los Angeles' && t.team_name === 'Chargers') idx.set('lac', t)
+    if (t.city === 'Los Angeles' && t.team_name === 'Rams')     idx.set('lar', t)
+    if (t.city === 'New York' && t.team_name === 'Jets')  idx.set('nyj', t)
+    if (t.city === 'New York' && t.team_name === 'Giants')idx.set('nyg', t)
+    if (t.city === 'Washington') idx.set('commanders', t)
+    if (t.city === 'Arizona')    idx.set('cardinals', t)
+    if (t.city === 'Charlotte')  idx.set('panthers', t)
   }
   return idx
 }
 
-// ========= Small UI bits =========
+/* ------------------------------------------
+   Tiny UI bits
+   ------------------------------------------ */
 const TokenIcon = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="currentColor">
     <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" />
@@ -157,37 +180,9 @@ const TokenIcon = ({ className }: { className?: string }) => (
   </svg>
 )
 
-const PixelatedCloud = ({ index }: { index: number }) => {
-  const speeds = [25, 35, 45, 30, 40, 50, 28, 38]
-  const dims = [
-    { w: 80, h: 40, o: 0.25 },
-    { w: 120, h: 50, o: 0.35 },
-    { w: 100, h: 45, o: 0.30 },
-    { w: 90, h: 35, o: 0.22 },
-    { w: 110, h: 48, o: 0.28 },
-    { w: 85, h: 38, o: 0.26 },
-    { w: 95, h: 42, o: 0.32 },
-    { w: 105, h: 46, o: 0.29 }
-  ]
-  const d = dims[index % dims.length]
-  return (
-    <div
-      className="absolute bg-white"
-      style={{
-        top: `${15 + (index * 12) % 50}%`,
-        width: d.w,
-        height: d.h,
-        opacity: d.o,
-        animation: `cloudDrift ${speeds[index % speeds.length]}s linear infinite`,
-        animationDelay: `${index * 2.2}s`,
-        clipPath: `polygon(25% 0%, 75% 0%, 100% 25%, 100% 75%, 75% 100%, 25% 100%, 0% 75%, 0% 25%)`,
-        imageRendering: 'pixelated'
-      }}
-    />
-  )
-}
-
-// ========= Page =========
+/* ------------------------------------------
+   Page
+   ------------------------------------------ */
 export default function PerfectSlateGame() {
   const router = useRouter()
 
@@ -225,15 +220,11 @@ export default function PerfectSlateGame() {
     return () => window.removeEventListener('resize', update)
   }, [])
 
-  // Build the fast team index whenever teams change
   const teamIndex = useMemo(() => buildTeamIndex(teams), [teams])
+  const resolveTeam = (nameOrAbbr?: string): Team | undefined =>
+    nameOrAbbr ? teamIndex.get(normalize(nameOrAbbr)) : undefined
 
-  const resolveTeam = (nameOrAbbr?: string): Team | undefined => {
-    if (!nameOrAbbr) return undefined
-    return teamIndex.get(normalize(nameOrAbbr))
-  }
-
-  // ===== Auth + initial load =====
+  /* ------------ Auth & initial load ------------ */
   useEffect(() => {
     const handleAuthFlow = async () => {
       const urlParams = new URLSearchParams(window.location.search)
@@ -289,9 +280,7 @@ export default function PerfectSlateGame() {
       }
     })
 
-    return () => {
-      authListener.subscription.unsubscribe()
-    }
+    return () => authListener.subscription.unsubscribe()
   }, [selectedSport])
 
   useEffect(() => {
@@ -309,13 +298,19 @@ export default function PerfectSlateGame() {
   const loadUserProfile = async (userId: string) => {
     try {
       const { data: userData, error } = await supabase
-        .from('user_profiles').select('token_balance').eq('id', userId).single()
+        .from('user_profiles')
+        .select('token_balance')
+        .eq('id', userId)
+        .single()
 
       if (error && (error as any).code === 'PGRST116') {
         const { error: createError } = await supabase.rpc('create_profile_for_user', { user_id: userId })
         if (!createError) {
           const { data: newUserData } = await supabase
-            .from('user_profiles').select('token_balance').eq('id', userId).single()
+            .from('user_profiles')
+            .select('token_balance')
+            .eq('id', userId)
+            .single()
           if (newUserData) setTokenBalance(newUserData.token_balance)
         }
       } else if (userData) {
@@ -357,7 +352,6 @@ export default function PerfectSlateGame() {
 
         if (gamesData) {
           setGames(gamesData)
-
           const gameIds = gamesData.map(g => g.id)
           const { data: picksData } = await supabase
             .from('picks')
@@ -367,7 +361,6 @@ export default function PerfectSlateGame() {
         }
       }
 
-      // Only fetch NFL teams for logos/colors
       if (selectedSport === 'NFL') {
         const { data: teamsData } = await supabase
           .from('teams')
@@ -375,7 +368,7 @@ export default function PerfectSlateGame() {
           .eq('sport', 'NFL')
         setTeams(teamsData || [])
       } else {
-        setTeams([]) // avoid mismatches on non-NFL
+        setTeams([])
       }
     } finally {
       setIsLoading(false)
@@ -416,12 +409,10 @@ export default function PerfectSlateGame() {
     }
   }
 
-  const isGameAvailable = (g: Game) => {
-    const now = new Date()
-    return g.status === 'scheduled' && new Date(g.scheduled_time) > now
-  }
+  const isGameAvailable = (g: Game) =>
+    g.status === 'scheduled' && new Date(g.scheduled_time) > new Date()
 
-  // === Toggle behavior: tap the same pick again => remove. Tap other side => replace. ===
+  // Tap again to unselect; tap opposite side replaces
   const handlePickSelect = (
     gameId: number,
     pickType: 'spread' | 'total',
@@ -436,7 +427,6 @@ export default function PerfectSlateGame() {
       p.gameId === gameId && p.pickType === pickType && p.pickId === pickId
     )
     if (idxExact !== -1) {
-      // tap same -> unselect
       const cp = [...selectedPicks]
       cp.splice(idxExact, 1)
       setSelectedPicks(cp)
@@ -446,16 +436,13 @@ export default function PerfectSlateGame() {
     const idxSameType = selectedPicks.findIndex(p =>
       p.gameId === gameId && p.pickType === pickType
     )
-
     if (idxSameType !== -1) {
-      // replace the other side for same type
       const cp = [...selectedPicks]
       cp[idxSameType] = { gameId, pickId, pickType, selection, displayText }
       setSelectedPicks(cp)
       return
     }
 
-    // brand-new pick for this game
     const picksForGame = selectedPicks.filter(p => p.gameId === gameId)
     if (selectedPicks.length + gamesWithTokens.size >= 10) return
     if (picksForGame.length >= 2) return
@@ -509,7 +496,7 @@ export default function PerfectSlateGame() {
     }
   }
 
-  // ========= Game Card =========
+  /* ------------ Game Card ------------ */
   const GameCard = ({ game }: { game: Game }) => {
     const gamePicks = picks.filter(p => p.game_id === game.id)
     const spreads = gamePicks.filter(p => p.pick_type === 'spread')
@@ -525,18 +512,14 @@ export default function PerfectSlateGame() {
     const disabled  = hasToken || isSubmitted || !available || contestStatus !== 'active'
     const started   = game.status === 'in_progress' || game.status === 'final'
 
-    // Resolve teams via index
     const homeTeam =
       resolveTeam(game.home_team) ||
-      resolveTeam(game.home_team_short) ||
-      resolveTeam(`${game.home_team}`)
+      resolveTeam(game.home_team_short)
 
     const awayTeam =
       resolveTeam(game.away_team) ||
-      resolveTeam(game.away_team_short) ||
-      resolveTeam(`${game.away_team}`)
+      resolveTeam(game.away_team_short)
 
-    // percents
     const totalSpread = (homeSpread?.times_selected || 0) + (awaySpread?.times_selected || 0)
     const totalTotal  = (overTotal?.times_selected || 0)  + (underTotal?.times_selected || 0)
     const homeSpreadPct = totalSpread > 0 ? Math.round(((homeSpread?.times_selected || 0)/totalSpread)*100) : 50
@@ -584,7 +567,6 @@ export default function PerfectSlateGame() {
           }}
         />
         <div className="relative bg-white/95 backdrop-blur p-4">
-          {/* header */}
           <div className="flex justify-between items-start mb-3">
             <div className="flex flex-col">
               <div className="flex items-center gap-2 text-gray-700">
@@ -623,7 +605,6 @@ export default function PerfectSlateGame() {
             )}
           </div>
 
-          {/* teams row */}
           <div className="flex items-center justify-center mb-3">
             <div className="flex items-center gap-2 flex-1 justify-end">
               {awayLogo && (
@@ -654,7 +635,6 @@ export default function PerfectSlateGame() {
             </div>
           </div>
 
-          {/* score */}
           {(game.status === 'in_progress' || game.status === 'final') && (
             <div className="text-center mb-3">
               <div className="text-xl font-bold pixel-font">
@@ -675,10 +655,8 @@ export default function PerfectSlateGame() {
             </div>
           )}
 
-          {/* picks */}
           {isGameAvailable(game) ? (
             <div className="space-y-3">
-              {/* spread */}
               <div>
                 <div className="text-center text-[11px] font-bold text-gray-500 mb-1 pixel-font">SPREAD</div>
                 <div className="grid grid-cols-2 gap-2">
@@ -707,7 +685,6 @@ export default function PerfectSlateGame() {
                 </div>
               </div>
 
-              {/* total */}
               <div>
                 <div className="text-center text-[11px] font-bold text-gray-500 mb-1 pixel-font">
                   {game.sport === 'MLB' ? 'TOTAL RUNS' : 'TOTAL POINTS'}
@@ -807,7 +784,7 @@ export default function PerfectSlateGame() {
     </button>
   )
 
-  // ====== Loading screen ======
+  /* ------------ Loading ------------ */
   if (isLoading) {
     return (
       <div className="min-h-screen bg-sky-400 flex items-center justify-center">
@@ -831,16 +808,39 @@ export default function PerfectSlateGame() {
       <style jsx>{`
         @keyframes cloudDrift {
           from { transform: translateX(-200px); }
-          to { transform: translateX(calc(100vw + 200px)); }
+          to   { transform: translateX(calc(100vw + 200px)); }
         }
       `}</style>
 
       {/* Sky */}
       <div className="bg-sky-400 absolute top-0 left-0 right-0 h-[450px]" />
-      {/* Clouds */}
+
+      {/* Pixel clouds from Storage */}
       <div className="absolute top-0 left-0 right-0 h-[450px] overflow-hidden pointer-events-none">
-        {Array.from({ length: 8 }).map((_, i) => <PixelatedCloud key={i} index={i} />)}
+        {(() => {
+          const seed = Number(new Date().toISOString().slice(0,10).replace(/-/g,'')) // stable per day
+          const howMany = isMobile ? 6 : 8
+          const chosen = pickCloudIndices(seed, howMany)
+          return chosen.map((idx, k) => (
+            <img
+              key={k}
+              src={cloudUrl(idx)}
+              alt=""
+              role="presentation"
+              className="absolute select-none"
+              style={{
+                top: `${12 + (k * 9) % 55}%`,
+                height: `${36 + (k % 4) * 10}px`,
+                animation: `cloudDrift ${24 + (k % 6) * 4}s linear infinite`,
+                animationDelay: `${k * 1.6}s`,
+                opacity: 0.24 + (k % 4) * 0.06,
+                transform: 'translateX(-200px)'
+              }}
+            />
+          ))
+        })()}
       </div>
+
       {/* Field */}
       <div className="bg-green-500 absolute top-[450px] left-0 right-0 bottom-0" />
 
@@ -970,7 +970,7 @@ export default function PerfectSlateGame() {
         </div>
       </div>
 
-      {/* Floating counter */}
+      {/* Floating picks */}
       {totalPicks > 0 && !isSubmitted && (
         <div className="fixed bottom-4 right-4 z-50">
           <button
