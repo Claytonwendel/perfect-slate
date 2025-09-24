@@ -29,9 +29,9 @@ function mulberry32(seed: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
 }
-function pickCloudIndices(seed: number, howMany: number) {
+function pickIndices(seed: number, howMany: number) {
   const r = mulberry32(seed)
-  const idxs = Array.from({ length: CLOUD_COUNT }, (_, i) => i)
+  const idxs = Array.from({ length: _COUNT }, (_, i) => i)
   for (let i = idxs.length - 1; i > 0; i--) {
     const j = Math.floor(r() * (i + 1))
     ;[idxs[i], idxs[j]] = [idxs[j], idxs[i]]
@@ -806,7 +806,7 @@ export default function PerfectSlateGame() {
   return (
     <div className="min-h-screen relative">
       <style jsx>{`
-        @keyframes cloudDrift {
+        @keyframes Drift {
           from { transform: translateX(-200px); }
           to   { transform: translateX(calc(100vw + 200px)); }
         }
@@ -820,21 +820,21 @@ export default function PerfectSlateGame() {
         {(() => {
           const seed = Number(new Date().toISOString().slice(0,10).replace(/-/g,'')) // stable per day
           const howMany = isMobile ? 6 : 8
-          const chosen = pickCloudIndices(seed, howMany)
+          const chosen = pickIndices(seed, howMany)
           return chosen.map((idx, k) => (
             <img
               key={k}
-              src={cloudUrl(idx)}
+              src={Url(idx)}
               alt=""
               role="presentation"
               className="absolute select-none"
               style={{
                 top: `${12 + (k * 9) % 55}%`,
                 height: `${36 + (k % 4) * 10}px`,
-                animation: `cloudDrift ${24 + (k % 6) * 4}s linear infinite`,
+                animation: `Drift ${24 + (k % 6) * 4}s linear infinite`,
                 animationDelay: `${k * 1.6}s`,
                 opacity: 0.24 + (k % 4) * 0.06,
-                transform: 'translateX(-200px)'
+                transform: 'translateX(0)'
               }}
             />
           ))
