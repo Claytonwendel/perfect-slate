@@ -816,7 +816,7 @@ export default function PerfectSlateGame() {
       <div className="bg-sky-400 absolute top-0 left-0 right-0 h-[450px]" />
 
       {/* Pixel clouds from Storage */}
-      <div className="absolute top-0 left-0 right-0 h-[450px] overflow-hidden pointer-events-none">
+      <div className="absolute top-0 left-0 right-0 h-[450px] overflow-hidden pointer-events-none" style={{ zIndex: 5 }}>
         {(() => {
           const seed = Number(new Date().toISOString().slice(0,10).replace(/-/g,'')) // stable per day
           const howMany = isMobile ? 6 : 8
